@@ -1,5 +1,6 @@
 import sys
 import time
+import logging
 from datetime import datetime
 import requests
 
@@ -9,7 +10,7 @@ CS_DELTA_RANGE = (0.165,0.4)
 CB_DELTA_RANGE = (0.05,0.16)
 PS_DELTA_RANGE = (-0.4,-0.165)
 PB_DELTA_RANGE = (-0.16,-0.05)
-SELL_SYMMETRY = 0.04
+SELL_SYMMETRY = 0.03
 BUY_SYMMETRY = 0.05
 ET_WIDTH_BOUND = 0
 TC_WIDTH_BOUND = 0.334
@@ -28,7 +29,7 @@ def check_delta_bound(delta, option_type=None):
     elif option_type == "pb":
         delta_range = PB_DELTA_RANGE
     else:
-        print("invalid call type")
+        logging.error("invalid call type")
         sys.exit(1)
     if ARGS["skip_delta"]:
         return True
@@ -89,30 +90,31 @@ class Candidate:
         psd = ps["delta"]
         pbd = pb["delta"] 
 
-        print("******************")
-        print("css:", css)
-        print("cbs:", cbs)
-        print("pss:", pss)
-        print("pbs:", pbs) 
-        print("price")
-        print("csp:", csp)
-        print("cbp:", cbp)
-        print("psp:", psp)   
-        print("pbp:", pbp) 
-        print("strike")
-        print("csd:", csd)
-        print("cbd:", cbd)
-        print("psd:", psd)
-        print("pbd:", pbd)   
-        print("******************")
+        logging.info("******************")
+        logging.info("strike")
+        logging.info(f"css: {css:.3f}")
+        logging.info(f"cbs: {cbs:.3f}")
+        logging.info(f"pss: {pss:.3f}")
+        logging.info(f"pbs: {pbs:.3f}") 
+        logging.info("price")
+        logging.info(f"csp: {csp:.3f}")
+        logging.info(f"cbp: {cbp:.3f}")
+        logging.info(f"psp: {psp:.3f}")   
+        logging.info(f"pbp: {pbp:.3f}") 
+        logging.info(f"delta")
+        logging.info(f"csd: {csd:.3f}")
+        logging.info(f"cbd: {cbd:.3f}")
+        logging.info(f"psd: {psd:.3f}")
+        logging.info(f"pbd: {pbd:.3f}")   
+        logging.info("******************")
         
         tc = csp - cbp + psp - pbp
         width = ((cbs - css) + (pss - pbs)) * 0.5
 
-        print("tc:", tc)
-        print("width:", width)
-        print("cbs - css:", (cbs - css))
-        print("pss - pbs:", pss - pbs)
+        logging.info(f"tc: {tc:.3f}")
+        logging.info(f"width: {width:.3f}")
+        logging.info(f"cbs - css: {(cbs - css):.3f}")
+        logging.info(f"pss - pbs: {(pss - pbs):.3f}")
       
         try:
             tc_width = tc / width
@@ -123,12 +125,12 @@ class Candidate:
             delta_pd = psd - pbd - delta_pc 
             cd = cbs - css - tc
             pd = pss - pbs - tc
-            print("d_cc:", delta_cc)
-            print("d_pc:", delta_pc)   
-            print("d_cd:", delta_cd)
-            print("d_pd:", delta_pd)            
-            print("cd:", cd)            
-            print("pd:", pd)
+            logging.info(f"d_cc: {delta_cc:.3f}")
+            logging.info(f"d_pc:  {delta_pc:.3f}")   
+            logging.info(f"d_cd: {delta_cd:.3f}")
+            logging.info(f"d_pd: {delta_pd:.3f}")            
+            logging.info(f"cd:  {cd:.3f}")            
+            logging.info(f"pd: {pd:.3f}")
 
             ecch = 0.5 * tc * delta_cc
             epch = -0.5 * tc * delta_pc
@@ -138,14 +140,14 @@ class Candidate:
             epd = pd * pbd 
             et = etc + ecch + ecdh + epch + epdh + ecd + epd
 
-            print("etc:", etc)
-            print("ecch:", ecch)
-            print("epch:", epch)
-            print("ecdh:", ecdh)
-            print("epdh:", epdh)
-            print("ecd:", ecd)
-            print("epd:", epd)
-            print("et:", et)
+            logging.info(f"etc: {etc:.3f}")
+            logging.info(f"ecch: {ecch:.3f}")
+            logging.info(f"epch: {epch:.3f}")
+            logging.info(f"ecdh: {ecdh:.3f}")
+            logging.info(f"epdh: {epdh:.3f}")
+            logging.info(f"ecd: {ecd:.3f}")
+            logging.info(f"epd: {epd:.3f}")
+            logging.info(f"et: {et:.3f}")
 
             et_width = et/width
             et_tc = et/tc
@@ -159,12 +161,12 @@ class Candidate:
             tc_ml = tc/ml
             et_tc = et/tc
 
-            print("ml:", ml)
-            print("tc/ml:", tc_ml)
-            print("et/ml:", et_ml)
-            print("tc/width:", tc_width)
-            print("et/width:", et_width)
-            print("et/tc:", et_tc)
+            logging.info(f"ml: {ml:.3f}")
+            logging.info(f"tc/ml: {tc_ml:.3f}")
+            logging.info(f"et/ml: {et_ml:.3f}")
+            logging.info(f"tc/width: {tc_width:.3f}")
+            logging.info(f"et/width: {et_width:.3f}")
+            logging.info(f"et/tc: {et_tc:.3f}")
 
             # properties
             self._tc = tc
@@ -176,8 +178,8 @@ class Candidate:
             self._ml = ml
             self._et_ml = et_ml
             self._tc_ml = tc_ml
-        except ZeroDivisionError as e:
-            #print("zerodivisionerror")
+        except ZeroDivisionError:
+            logging.info("zerodivisionerror")
             #raise e
             #sys.exit(1)
             self._tc = None
@@ -298,63 +300,63 @@ class Candidate:
 
     def meets_requirements(self):
         if self._cs["strike"] >= self.cb["strike"]:
-            print("bad call strike: sell>buy")
+            logging.info("bad call strike: sell>buy")
             return False
         if self._pb["strike"] >= self._ps["strike"]:
-            print("bad put strike: buy>sell")
+            logging.info("bad put strike: buy>sell")
             return False
     
         if self._ps["strike"] >= self._cs["strike"]:
-            print("bad call/put strikes")
+            logging.info("bad call/put strikes")
             return False
 
         if not self._ps["price"] >= self._pb["price"]:
-            print('bad price: put sell < buy')
+            logging.info('bad price: put sell < buy')
             return False
         if not self._cs["price"] >= self._cb["price"]:
-            print("bad price: call sell < buy")
+            logging.info("bad price: call sell < buy")
             return False
                      
         if not ARGS["skip_delta"]:
             if not check_delta_bound(self._cs["delta"], option_type="cs"):
-                print("bad bound: call sell delta")
+                logging.info("bad bound: call sell delta")
                 return False
             if not check_delta_bound(self._cb["delta"], option_type="cb"):
-                print("bad bound: call buy delta")
+                logging.info("bad bound: call buy delta")
                 return False
             if not check_delta_bound(self._ps["delta"], option_type="ps"):
-                print("bad bound: put sell delta")
+                logging.info("bad bound: put sell delta")
                 return False
             if not check_delta_bound(self._pb["delta"], option_type="pb"):
-                print("bad bound: put buy delta")
+                logging.info("bad bound: put buy delta")
                 return False
     
         symms = self._cs["delta"] + self._ps["delta"]
-        print("symms = ", symms)
+        logging.info("symms = ", symms)
         if -SELL_SYMMETRY >= symms or symms >= SELL_SYMMETRY:
-            print("bad symmetry: sell")
+            logging.info("bad symmetry: sell")
             return False
 
         if self._ps["strike"] - self._pb["strike"] <= self._tc:
-            print("bad tail: put")
+            logging.info("bad tail: put")
             return False   
 
         if self._cb["strike"] - self._cs["strike"] <= self._tc:
-            print("bad tail: call")
+            logging.info("bad tail: call")
             return False  
 
         if self.et_width <= ET_WIDTH_BOUND:
             if CHECK_ALL  or CHECK_ET:
-                print("bad et/width check")
+                logging.info("bad et/width check")
                 return False
         if self.tc_width <= TC_WIDTH_BOUND:
             if CHECK_ALL  or CHECK_TC:
-                print("bad tc/width check")
+                logging.info("bad tc/width check")
                 return False
 
         #if self._et is None or self._et <= -.1:
         if self._et <= 0.01:
-            print("bad et")
+            logging.info("bad et")
             return False
     
         return True
@@ -384,19 +386,19 @@ def get_chains(symbol):
     params["interval"] = 1
     params["fromDate"] = f"{dt_min.year}-{dt_min.month}-{dt_min.day}"
     params["toDate"] = f"{dt_max.year}-{dt_max.month}-{dt_max.day}"
-    print(f"fromDate: {dt_min.year}-{dt_min.month}-{dt_min.day}")
-    print(f"toDate: {dt_max.year}-{dt_max.month}-{dt_max.day}")
+    logging.info(f"fromDate: {dt_min.year}-{dt_min.month}-{dt_min.day}")
+    logging.info(f"toDate: {dt_max.year}-{dt_max.month}-{dt_max.day}")
     params["daysToExpiration"] = 45
     req = "https://api.tdameritrade.com/v1/marketdata/chains"
     rsp = requests.get(req, params=params, headers=headers)
     if rsp.status_code != 200:
-        print("got bad status code:", rsp.status_code)
+        logging.error(f"got bad status code: {rsp.status_code}")
         return None
     rsp_json = rsp.json()
     if rsp_json["status"] == "FAILED":
-        print("got FAILED status")
+        logging.error("got FAILED status")
         return None
-    #print(rsp_json)
+    #logging.info(rsp_json)
     return rsp_json
 
 def get_options(option_map, underlying):
@@ -418,14 +420,14 @@ def get_options(option_map, underlying):
                 strike = float(strikePrice)
                 if description.endswith("Put"):
                     if underlying <= strike:
-                        print(f"skip put, underlying: {underlying} strike: {strike}")
+                        logging.info(f"skip put, underlying: {underlying} strike: {strike}")
                         continue
                 elif description.endswith("Call"):
                     if underlying >= strike:
-                        print(f"skip call, underlying: {underlying} strike: {strike}")
+                        logging.info(f"skip call, underlying: {underlying} strike: {strike}")
                         continue
                 else:
-                    print(f"unexpected description: {description}")
+                    logging.info(f"unexpected description: {description}")
                     sys.exit(1)
                 price = (option["bid"] + option["ask"])/2.0
                 item = {"description": description, "delta": delta, "strike": strike, "price": price}
@@ -447,9 +449,9 @@ def get_contracts(chains):
     callMap = chains["callExpDateMap"]
     
     put_options = get_options(putMap, underlying)
-    print(f"got {len(put_options)} put options")
+    logging.info(f"got {len(put_options)} put options")
     call_options = get_options(callMap, underlying)
-    print(f"got {len(call_options)} call options")
+    logging.info(f"got {len(call_options)} call options")
 
     return {"underlying": underlying, "call": call_options, "put": put_options}   
 
@@ -469,7 +471,7 @@ def get_candidates(contracts):
             this_strike = cb["strike"]
             
             if this_strike <= last_strike:
-                print(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
+                logging.info(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
                 sys.exit(1)
             for k in range(len(put_list) - 1):
                 pb = put_list[k]
@@ -478,7 +480,7 @@ def get_candidates(contracts):
                     ps = put_list[l]
                     this_strike = ps["strike"]
                     if this_strike <= last_strike:
-                        print(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
+                        logging.info(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
                         sys.exit(1)
 
                     candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
@@ -507,8 +509,10 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
 
 symbols = []
 ARGS["skip_delta"] = False
+loglevel = logging.DEBUG  # DEBUG or INFO or ERROR
+logging.basicConfig(format='LOG %(message)s', level=loglevel)
+
 for argn in range(1, len(sys.argv)):
-    print("got arg:", sys.argv[argn])
     argval = sys.argv[argn]
     if argval.startswith('-'):
         if argval == "--skip-delta":
@@ -525,6 +529,7 @@ symbol = symbols[0]
 print("getting symbol:", symbol)
 chains = get_chains(symbol)
 if not chains:
+    print("could not get any options")
     sys.exit(1)
 contracts = get_contracts(chains)
 
