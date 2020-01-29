@@ -214,15 +214,16 @@ class Candidate:
         print("----")
         
         if self._et:
-            print(f"et: {self._et:.3f} rank: {self._et_rank}")
-            print(f"tc: {self._tc:.2f} rank: {self._tc_rank}")
-            print(f"width: {self._width:.2f} rank: {self._width_rank}")
-            print(f"ml: {self._ml:.2f} rank: {self._ml_rank}")
-            print(f"tc/width: {100*self._tc_width:.2f}% rank: {self._tc_width_rank}")
-            #print(f"tc/ml: {tc_ml:.2f} rank: {tc_ml_rank}")
-            print(f"et/width: {100*self._et_width:.2f}% rank: {self._et_width_rank}")
-            #print(f"et/ml: {Et_ml:.2f} rank: {Et_ml_rank}")
-            print(f"et/tc: {100*self._et_tc:.2f}% rank: {self._et_tc_rank}")
+            for propname in {"et", "tc", "width", "ml", "tc_width", "et_width", "et_tc"}:
+                propval = self.get_prop(propname)
+                proprank = self.get_rank(propname)
+
+                s = f"{propname}: {propval:.3f}"
+                if proprank:
+                    s += f" rank: {proprank}"
+                if "sort_key" in ARGS and ARGS["sort_key"] == propname:
+                    s += " *"
+                print(s)
     
     @property
     def cs(self):
@@ -618,7 +619,7 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
 
 symbols = []
 ARGS["skip_delta"] = False
-sort_key = "et"
+ARGS["sort_key"] = "et"
 sort_keys = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc")
 
 logging.basicConfig(format='LOG %(message)s', level=loglevel)
@@ -627,10 +628,11 @@ sort_key_arg = False
 for argn in range(1, len(sys.argv)):
     argval = sys.argv[argn]
     if sort_key_arg:
-        sort_key = argval
-        if sort_key not in sort_keys:
+        if argval not in sort_keys:
             print("sort key must be one of:", sort_keys)
             sys.exit(1)
+        ARGS["sort_key"] = argval
+        
         sort_key_arg = False
     elif argval.startswith('-'):
         if argval == "--skip-delta":
@@ -679,6 +681,7 @@ for propname in sort_keys:
 
 
 print("======================")
+sort_key = ARGS["sort_key"]
 candidates.sort(key = lambda candidate: candidate.get_prop(sort_key), reverse=True)
 
 printCandidates(candidates)
