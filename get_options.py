@@ -6,36 +6,63 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165,0.4)
-CB_DELTA_RANGE = (0.05,0.16)
-PS_DELTA_RANGE = (-0.4,-0.165)
-PB_DELTA_RANGE = (-0.16,-0.05)
-SELL_SYMMETRY = 0.03
-BUY_SYMMETRY = 0.05
-ET_WIDTH_BOUND = 0
-TC_WIDTH_BOUND = 0.334
-CHECK_ALL = False
-CHECK_ET = False
-CHECK_TC = False
-loglevel = logging.ERROR  # DEBUG or INFO or ERROR
+CS_DELTA_RANGE = (0.165,0.36)
+CB_DELTA_RANGE = (0.03,0.16)
+PS_DELTA_RANGE = (-0.36,-0.165)
+PB_DELTA_RANGE = (-0.16,-0.03)
+
+WINET_BOUND = 0.1
+ET_BOUND = -0.1
+ET_WIDTH_BOUND = -1
+TC_WIDTH_BOUND = 0
+
+SELL_SYMMETRY = 0.1
+TOTAL_SYMMETRY = 0.25
+WIDTH_SYMMETRY = 2
+
+loglevel = logging.DEBUG  # DEBUG or INFO or ERROR
 
 
-def check_delta_bound(delta, option_type=None):
+def check_delta_bound(delta, option_type=None, c_delta=None):
+    if ARGS["skip_delta"]:
+        return True
     if option_type == "cs":
-        delta_range = CS_DELTA_RANGE
+        lbnd = CS_DELTA_RANGE[0]
+        ubnd = CS_DELTA_RANGE[1]
     elif option_type == "cb":
-        delta_range = CB_DELTA_RANGE
+        lbnd = CB_DELTA_RANGE[0]
+        ubnd = CB_DELTA_RANGE[1]
+        if c_delta:
+            if c_delta > ubnd:
+                ubnd = c_delta 
     elif option_type == "ps":
-        delta_range = PS_DELTA_RANGE
+        #lbnd = PS_DELTA_RANGE[0]
+        #ubnd = PS_DELTA_RANGE[1]
+        lbnd = -c_delta - SELL_SYMMETRY
+        if lbnd < PS_DELTA_RANGE[0]:
+            lbnd = PS_DELTA_RANGE[0]
+        #elif lbnd > PS_DELTA_RANGE[1]:
+        #    lbnd = PS_DELTA_RANGE[1]
+        ubnd = -c_delta + SELL_SYMMETRY
+        if not ubnd < PS_DELTA_RANGE[1]:
+            ubnd = PS_DELTA_RANGE[1]
     elif option_type == "pb":
-        delta_range = PB_DELTA_RANGE
+        lbnd = PB_DELTA_RANGE[0]
+        ubnd = PB_DELTA_RANGE[1]
+        if c_delta:
+            if c_delta > lbnd:
+                lbnd = c_delta
     else:
         logging.error("invalid call type")
         sys.exit(1)
-    if ARGS["skip_delta"]:
-        return True
     
-    if delta >= delta_range[0] and delta <= delta_range[1]:
+    logging.debug(f"check_delta - lbnd: {lbnd:.3f} ubnd: {ubnd:.3f}")
+    """
+    if ubnd < lbnd:
+        logging.warning("expected delta check upper bound to be greater than lower bound")
+        return False
+    """
+    if lbnd <= delta and delta <= ubnd:
         return True
 
     return False
@@ -46,7 +73,7 @@ def option_str(option):
     strike = option["strike"]
     price = option["price"]
 
-    s = f"{desc} -- delta: {delta:.2f} strike: {strike:.2f} price: {price:.2f} "
+    s = f"{desc} -- delta: {delta:.2f} price: {price:.2f} strike: {strike} "
     return s
 
 class bcolors:
@@ -65,6 +92,52 @@ def get_headers():
     headers = {"Authorization": "Bearer " + data}
     return headers
 
+def prelimination(cs=None, cb=None, ps=None, pb=None):  
+                     
+    logging.info(f"pre elimination check")
+    logging.info(f"strike: {cs['strike']:.1f}/{cb['strike']:.1f}/{ps['strike']:.1f}/{pb['strike']:.1f}" )
+
+    if cs["strike"] >= cb["strike"]:
+        logging.info("bad call strike: sell>buy")
+        return False
+
+    if pb["strike"] >= ps["strike"]:
+        logging.info("bad put strike: buy>sell")
+        return False
+    
+    if ps["strike"] >= cs["strike"]:
+        logging.info("bad call/put strikes")
+        return False
+
+    if not ps["price"] >= pb["price"]:
+        logging.info('bad price: put sell < buy')
+        return False
+
+    if not cs["price"] >= cb["price"]:
+        logging.info("bad price: call sell < buy")
+        return False
+    
+    if cb["strike"] - cs["strike"] > WIDTH_SYMMETRY * (ps["strike"] - pb["strike"]):
+        logging.info("bad put width: too small")
+        return False
+
+    if ps["strike"] - pb["strike"] > WIDTH_SYMMETRY * (cb["strike"] - cs["strike"]):
+        logging.info("bad call width: too small")
+        return False
+
+    ssymm = cs["delta"] + ps["delta"]
+    logging.info(f"sell symm = {ssymm:.3f}")
+    if not abs(ssymm) < SELL_SYMMETRY:
+        logging.info("bad symmetry: sell")
+        return False
+
+    symm = cs["delta"] + cb["delta"] + ps["delta"] + pb["delta"]
+    if not abs(symm) < TOTAL_SYMMETRY:
+        logging.info(f"bad symmetry: over all symm = {ssymm:.3f}")
+        return False
+
+    return True
+
 class Candidate:
     def __init__(self, cs=None, cb=None, ps=None, pb=None, underlying=None):
         self._cs = cs
@@ -77,7 +150,9 @@ class Candidate:
         self._et_width_rank = None
         self._et_tc_rank = None
         self._tc_width_rank = None
-        self.__ml_rank = None
+        self._ml_rank = None
+        self._winet_rank = None
+        self._symm_rank = None
 
         css = cs["strike"]
         cbs = cb["strike"]
@@ -93,7 +168,11 @@ class Candidate:
         pbd = pb["delta"] 
 
         logging.info("******************")
-        logging.info("strike")
+        logging.info(f"strike: {css:.1f}/{cbs:.1f}/{pss:.1f}/{pbs:.1f}" )
+        logging.info(f"strike: {css:8.1f}  {cbs:8.1f}  {pss:8.1f}  {pbs:8.1f}" )
+        logging.info(f"delta:  {csd:8.3f}  {cbd:8.3f}  {psd:8.3f}  {pbd:8.3f}" )
+        logging.info(f"price:  {csp:8.3f}  {cbp:8.3f}  {psp:8.3f}  {pbp:8.3f}" )
+        """
         logging.info(f"css: {css:.3f}")
         logging.info(f"cbs: {cbs:.3f}")
         logging.info(f"pss: {pss:.3f}")
@@ -107,19 +186,22 @@ class Candidate:
         logging.info(f"csd: {csd:.3f}")
         logging.info(f"cbd: {cbd:.3f}")
         logging.info(f"psd: {psd:.3f}")
-        logging.info(f"pbd: {pbd:.3f}")   
+        logging.info(f"pbd: {pbd:.3f}")  
+        """ 
         logging.info("******************")
         
         tc = csp - cbp + psp - pbp
         width = ((cbs - css) + (pss - pbs)) * 0.5
+        symm = csd + cbd + psd + pbd
 
         logging.info(f"tc: {tc:.3f}")
         logging.info(f"width: {width:.3f}")
+        
+        logging.info(f"symm: {symm:.3f}")
         logging.info(f"cbs - css: {(cbs - css):.3f}")
         logging.info(f"pss - pbs: {(pss - pbs):.3f}")
       
         try:
-            tc_width = tc / width
             etc = tc * (1.0 - csd + psd) 
             delta_cc = tc * (csd - cbd)/(cbs - css)
             delta_pc = tc * (psd - pbd)/(pss - pbs) 
@@ -141,6 +223,7 @@ class Candidate:
             ecd = -cd * cbd 
             epd = pd * pbd 
             et = etc + ecch + ecdh + epch + epdh + ecd + epd
+            winet = etc + ecch + ecdh
 
             logging.info(f"etc: {etc:.3f}")
             logging.info(f"ecch: {ecch:.3f}")
@@ -150,7 +233,9 @@ class Candidate:
             logging.info(f"ecd: {ecd:.3f}")
             logging.info(f"epd: {epd:.3f}")
             logging.info(f"et: {et:.3f}")
+            logging.info(f"winet: {winet:.3f}")    
 
+            tc_width = tc / width
             et_width = et/width
             et_tc = et/tc
 
@@ -180,6 +265,8 @@ class Candidate:
             self._ml = ml
             self._et_ml = et_ml
             self._tc_ml = tc_ml
+            self._symm = abs(symm)
+            self._winet = winet
         except ZeroDivisionError:
             logging.info("zerodivisionerror")
             #raise e
@@ -192,8 +279,9 @@ class Candidate:
             self._et_tc = None
             self._ml = None
             self._et_ml = None
-            self._tc_ml= None
-
+            self._tc_ml = None
+            self._symm = None
+            self._winet = None
 
     
     def __str__(self):
@@ -203,7 +291,7 @@ class Candidate:
         ps_str = option_str(self._ps)
         return f"{cs_str}/{cb_str}/{pb_str}/{ps_str}"
 
-    def print_verbose(self):
+    def print_verbose(self, total=None):
         #print(candidate.keys())
         print() 
 
@@ -214,13 +302,15 @@ class Candidate:
         print("----")
         
         if self._et:
-            for propname in {"et", "tc", "width", "ml", "tc_width", "et_width", "et_tc"}:
+            for propname in ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet"):
                 propval = self.get_prop(propname)
                 proprank = self.get_rank(propname)
 
                 s = f"{propname}: {propval:.3f}"
                 if proprank:
                     s += f" rank: {proprank}"
+                if total:
+                    s += f"/{total}"
                 if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                     s += " *"
                 print(s)
@@ -292,6 +382,22 @@ class Candidate:
     def et_tc_rank(self):
         return self._et_tc_rank
 
+    @property
+    def symm(self):
+        return self._symm
+
+    @property
+    def symm_rank(self):
+        return self._symm_rank   
+
+    @property
+    def winet(self):
+        return self._winet
+
+    @property
+    def winet_rank(self):
+        return self._winet_rank                   
+
     def set_tc_rank(self, rank):
         self._tc_rank = rank
 
@@ -300,6 +406,12 @@ class Candidate:
 
     def set_et_tc_rank(self, rank):
         self._et_tc_rank = rank
+
+    def set_symm_rank(self, rank):
+        self._symm_rank = rank
+
+    def set_winet_rank(self, rank):
+        self._winet_rank = rank
 
     def get_prop(self, propname):
         if propname == "tc_ml":
@@ -320,6 +432,10 @@ class Candidate:
             return self._width
         if propname == "ml":
             return self._ml
+        if propname == "symm":
+            return self._symm     
+        if propname == "winet":
+            return self._winet 
         logging.error(f"get_prop unexpected propname: [{propname}]")
         sys.exit(1)
 
@@ -351,6 +467,12 @@ class Candidate:
         if propname == "ml":
             self._ml = value
             return
+        if propname == "symm":
+            self._symm = value
+            return  
+        if propname == "winet":
+            self._winet = value
+            return                      
         logging.error(f"set_prop unexpected propname: [{propname}]")
         sys.exit(1)
 
@@ -373,6 +495,10 @@ class Candidate:
             return self._width_rank
         if propname == "ml":
             return self._ml_rank
+        if propname == "symm":
+            return self._symm_rank    
+        if propname == "winet":
+            return self._symm_rank          
         logging.error(f"get_rank unexpected propname: [{propname}]")
         sys.exit(1)
 
@@ -404,11 +530,22 @@ class Candidate:
         if propname == "ml":
             self._ml_rank = value
             return
+        if propname == "symm":
+            self._symm_rank = value
+            return   
+        if propname == "winet":
+            self._winet_rank = value
+            return
         logging.error(f"set_rank unexpected propname: [{propname}]")
         sys.exit(1)
-        
+
+    
+
+
 
     def meets_requirements(self):
+        logging.info(f"requirements check")
+        """
         if self._cs["strike"] >= self.cb["strike"]:
             logging.info("bad call strike: sell>buy")
             return False
@@ -426,25 +563,20 @@ class Candidate:
         if not self._cs["price"] >= self._cb["price"]:
             logging.info("bad price: call sell < buy")
             return False
-                     
-        if not ARGS["skip_delta"]:
-            if not check_delta_bound(self._cs["delta"], option_type="cs"):
-                logging.info("bad bound: call sell delta")
-                return False
-            if not check_delta_bound(self._cb["delta"], option_type="cb"):
-                logging.info("bad bound: call buy delta")
-                return False
-            if not check_delta_bound(self._ps["delta"], option_type="ps"):
-                logging.info("bad bound: put sell delta")
-                return False
-            if not check_delta_bound(self._pb["delta"], option_type="pb"):
-                logging.info("bad bound: put buy delta")
-                return False
     
-        symms = self._cs["delta"] + self._ps["delta"]
-        logging.info("symms = ", symms)
-        if -SELL_SYMMETRY >= symms or symms >= SELL_SYMMETRY:
+        ssymm = self._cs["delta"] + self._ps["delta"]
+        logging.info(f"sell symm = {ssymm:.3f}")
+        if -SELL_SYMMETRY >= ssymm or ssymm >= SELL_SYMMETRY:
             logging.info("bad symmetry: sell")
+            return False
+
+        if -TOTAL_SYMMETRY >= self._symm or self._symm >= TOTAL_SYMMETRY:
+            logging.info("bad symmetry: over all")
+            return False
+        """
+
+        if self._winet <= WINET_BOUND:
+            logging.info("bad winet")
             return False
 
         if self._ps["strike"] - self._pb["strike"] <= self._tc:
@@ -455,17 +587,15 @@ class Candidate:
             logging.info("bad tail: call")
             return False  
 
-        if self.et_width <= ET_WIDTH_BOUND:
-            if CHECK_ALL  or CHECK_ET:
-                logging.info("bad et/width check")
-                return False
-        if self.tc_width <= TC_WIDTH_BOUND:
-            if CHECK_ALL  or CHECK_TC:
-                logging.info("bad tc/width check")
-                return False
+        if not self.et_width >= ET_WIDTH_BOUND:
+            logging.info("bad et/width check")
+            return False
+        if not self.tc_width >= TC_WIDTH_BOUND:
+            logging.info("bad tc/width check")
+            return False
 
         #if self._et is None or self._et <= -.1:
-        if self._et <= 0.01:
+        if self._et <= ET_BOUND:
             logging.info("bad et")
             return False
     
@@ -475,8 +605,9 @@ class Candidate:
  
 
 def printCandidates(candidates):
+    total = len(candidates)
     for candidate in candidates:
-        candidate.print_verbose()
+        candidate.print_verbose(total=total)
         print("------------")
 
 def get_chains(symbol):
@@ -528,11 +659,11 @@ def get_options(option_map, underlying):
                 print("description:", description)
                 delta = option["delta"]
                 strike = float(strikePrice)
-                if description.endswith("Put"):
+                if description.endswith("Put") or description.endswith("Put (Weekly)"):
                     if underlying <= strike:
                         logging.info(f"skip put, underlying: {underlying} strike: {strike}")
                         continue
-                elif description.endswith("Call"):
+                elif description.endswith("Call") or description.endswith("Call (Weekly)"):
                     if underlying >= strike:
                         logging.info(f"skip call, underlying: {underlying} strike: {strike}")
                         continue
@@ -575,30 +706,47 @@ def get_candidates(contracts):
     
     for i in range(len(call_list) - 1):
         cs = call_list[i]
+        print("--------cs:", cs["description"], "delta:", cs["delta"])
+        if not check_delta_bound(cs["delta"], option_type="cs"):
+            logging.info("bad bound: call sell delta")
+            continue
         last_strike = cs["strike"]
         for j in range(i+1, len(call_list)):
             cb = call_list[j]
+            print("------cb:", cb["description"], "delta:", cb["delta"])
+            if not check_delta_bound(cb["delta"], option_type="cb", c_delta=cs["delta"]):
+                logging.info("bad bound: call buy delta")
+                continue
             this_strike = cb["strike"]
             
             if this_strike <= last_strike:
                 logging.info(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
                 sys.exit(1)
+
             for k in range(len(put_list) - 1):
-                pb = put_list[k]
-                last_strike = pb["strike"]
-                for l in range(k+1, len(put_list)):
-                    ps = put_list[l]
-                    this_strike = ps["strike"]
-                    if this_strike <= last_strike:
+                ps = put_list[k]
+                print("----ps:", ps["description"], "delta:", ps["delta"])
+                if not check_delta_bound(ps["delta"], option_type="ps", c_delta=cs["delta"]):
+                    logging.info("bad bound: put buy delta")
+                    continue
+                last_strike = ps["strike"]
+                for l in range(0, k):
+                    pb = put_list[l]
+                    print("--pb:", pb["description"], "delta:", pb["delta"])
+                    if not check_delta_bound(ps["delta"], option_type="pb", c_delta=ps["delta"]):
+                        logging.info("bad bound: put sell delta")
+                        continue
+                    this_strike = pb["strike"]
+                    if this_strike >= last_strike:
                         logging.info(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
                         sys.exit(1)
 
-                    candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
-                    total_count += 1
-
-                    if  candidate.meets_requirements():
-                        candidates.append(candidate)
-                        meet_requirements_count += 1
+                    if prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
+                        candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
+                        total_count += 1
+                        if  candidate.meets_requirements():
+                            candidates.append(candidate)
+                            meet_requirements_count += 1
 
     print ("----------------------")
     print("total candidates:", total_count)
@@ -620,9 +768,17 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
 symbols = []
 ARGS["skip_delta"] = False
 ARGS["sort_key"] = "et"
-sort_keys = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc")
+sort_keys = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
 
-logging.basicConfig(format='LOG %(message)s', level=loglevel)
+# setup logging
+root = logging.getLogger()
+root.setLevel(logging.DEBUG)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(loglevel)
+formatter = logging.Formatter('%(levelname)s: %(message)s')
+handler.setFormatter(formatter)
+#logging.basicConfig(format='LOG %(message)s', level=loglevel)
+root.addHandler(handler)
 
 sort_key_arg = False
 for argn in range(1, len(sys.argv)):
