@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 import logging
 from datetime import datetime
@@ -67,6 +68,7 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
 
     return False
 
+"""
 def option_str(option):
     desc = option["description"]
     delta = option["delta"]
@@ -75,6 +77,7 @@ def option_str(option):
 
     s = f"{desc} -- delta: {delta:.2f} price: {price:.2f} strike: {strike} "
     return s
+"""
 
 class bcolors:
     HEADER = '\033[95m'
@@ -92,51 +95,35 @@ def get_headers():
     headers = {"Authorization": "Bearer " + data}
     return headers
 
-def prelimination(cs=None, cb=None, ps=None, pb=None):  
-                     
-    logging.info(f"pre elimination check")
-    logging.info(f"strike: {cs['strike']:.1f}/{cb['strike']:.1f}/{ps['strike']:.1f}/{pb['strike']:.1f}" )
 
-    if cs["strike"] >= cb["strike"]:
-        logging.info("bad call strike: sell>buy")
-        return False
 
-    if pb["strike"] >= ps["strike"]:
-        logging.info("bad put strike: buy>sell")
-        return False
-    
-    if ps["strike"] >= cs["strike"]:
-        logging.info("bad call/put strikes")
-        return False
+class Option:            
+    def __init__(self, desc=None, delta=None, strike=None, price=None):
+        self._desc = desc
+        self._delta = delta
+        self._strike = strike
+        self._price = price
 
-    if not ps["price"] >= pb["price"]:
-        logging.info('bad price: put sell < buy')
-        return False
+    def __str__(self):
+        s = f"{self._desc} -- delta: {self._delta:.2f} price: {self._price:.2f} strike: {self._strike}"
+        return s
 
-    if not cs["price"] >= cb["price"]:
-        logging.info("bad price: call sell < buy")
-        return False
-    
-    if cb["strike"] - cs["strike"] > WIDTH_SYMMETRY * (ps["strike"] - pb["strike"]):
-        logging.info("bad put width: too small")
-        return False
+    @property
+    def desc(self):
+        return self._desc
 
-    if ps["strike"] - pb["strike"] > WIDTH_SYMMETRY * (cb["strike"] - cs["strike"]):
-        logging.info("bad call width: too small")
-        return False
+    @property
+    def delta(self):
+        return self._delta
 
-    ssymm = cs["delta"] + ps["delta"]
-    logging.info(f"sell symm = {ssymm:.3f}")
-    if not abs(ssymm) < SELL_SYMMETRY:
-        logging.info("bad symmetry: sell")
-        return False
+    @property
+    def price(self):
+        return self._price
 
-    symm = cs["delta"] + cb["delta"] + ps["delta"] + pb["delta"]
-    if not abs(symm) < TOTAL_SYMMETRY:
-        logging.info(f"bad symmetry: over all symm = {ssymm:.3f}")
-        return False
+    @property
+    def strike(self):
+        return self._strike
 
-    return True
 
 class Candidate:
     def __init__(self, cs=None, cb=None, ps=None, pb=None, underlying=None):
@@ -154,18 +141,18 @@ class Candidate:
         self._winet_rank = None
         self._symm_rank = None
 
-        css = cs["strike"]
-        cbs = cb["strike"]
-        pss = ps["strike"]
-        pbs = pb["strike"]
-        csp = cs["price"]
-        cbp = cb["price"]
-        psp = ps["price"]
-        pbp = pb["price"]
-        csd = cs["delta"]
-        cbd = cb["delta"]
-        psd = ps["delta"]
-        pbd = pb["delta"] 
+        css = cs.strike
+        cbs = cb.strike
+        pss = ps.strike
+        pbs = pb.strike
+        csp = cs.price
+        cbp = cb.price
+        psp = ps.price
+        pbp = pb.price
+        csd = cs.delta
+        cbd = cb.delta
+        psd = ps.delta
+        pbd = pb.delta 
 
         logging.info("******************")
         logging.info(f"strike: {css:.1f}/{cbs:.1f}/{pss:.1f}/{pbs:.1f}" )
@@ -285,20 +272,16 @@ class Candidate:
 
     
     def __str__(self):
-        cs_str = option_str(self._cs)
-        cb_str = option_str(self._cb)
-        pb_str = option_str(self._pb)
-        ps_str = option_str(self._ps)
-        return f"{cs_str}/{cb_str}/{pb_str}/{ps_str}"
+        return f"{self._cs}/{self._cb}/{self._pb}/{self._ps}"
 
     def print_verbose(self, total=None):
         #print(candidate.keys())
         print() 
 
-        print("cs:",option_str(self._cs))
-        print("cb:", option_str(self._cb))
-        print("ps:", option_str(self._ps))
-        print("pb:", option_str(self._pb))
+        print("cs:", self._cs)
+        print("cb:", self._cb)
+        print("ps:", self._ps)
+        print("pb:", self._pb)
         print("----")
         
         if self._et:
@@ -546,25 +529,25 @@ class Candidate:
     def meets_requirements(self):
         logging.info(f"requirements check")
         """
-        if self._cs["strike"] >= self.cb["strike"]:
+        if self._cs.strike >= self.cb.strike:
             logging.info("bad call strike: sell>buy")
             return False
-        if self._pb["strike"] >= self._ps["strike"]:
+        if self._pb.strike >= self._ps.strike:
             logging.info("bad put strike: buy>sell")
             return False
     
-        if self._ps["strike"] >= self._cs["strike"]:
+        if self._ps.strike >= self._cs.strike:
             logging.info("bad call/put strikes")
             return False
 
-        if not self._ps["price"] >= self._pb["price"]:
+        if not self._ps.price >= self._pb.price:
             logging.info('bad price: put sell < buy')
             return False
-        if not self._cs["price"] >= self._cb["price"]:
+        if not self._cs.price >= self._cb.price:
             logging.info("bad price: call sell < buy")
             return False
     
-        ssymm = self._cs["delta"] + self._ps["delta"]
+        ssymm = self._cs.delta + self._ps.delta
         logging.info(f"sell symm = {ssymm:.3f}")
         if -SELL_SYMMETRY >= ssymm or ssymm >= SELL_SYMMETRY:
             logging.info("bad symmetry: sell")
@@ -579,11 +562,11 @@ class Candidate:
             logging.info("bad winet")
             return False
 
-        if self._ps["strike"] - self._pb["strike"] <= self._tc:
+        if self._ps.strike - self._pb.strike <= self._tc:
             logging.info("bad tail: put")
             return False   
 
-        if self._cb["strike"] - self._cs["strike"] <= self._tc:
+        if self._cb.strike - self._cs.strike <= self._tc:
             logging.info("bad tail: call")
             return False  
 
@@ -610,14 +593,8 @@ def printCandidates(candidates):
         candidate.print_verbose(total=total)
         print("------------")
 
-def get_chains(symbol):
-    seconds_in_day = 24.0 * 60.0 * 60.0
-    exp_target_min = time.time() + 41.0 * seconds_in_day
-    dt_min = datetime.fromtimestamp(exp_target_min)
-    exp_target_max = time.time() + 60.0 * seconds_in_day
-    dt_max = datetime.fromtimestamp(exp_target_max)
+def get_chains(symbol, dt_min, dt_max):
     
-
     headers = get_headers()
     params = {}
     params["symbol"] = symbol
@@ -671,7 +648,7 @@ def get_options(option_map, underlying):
                     logging.info(f"unexpected description: {description}")
                     sys.exit(1)
                 price = (option["bid"] + option["ask"])/2.0
-                item = {"description": description, "delta": delta, "strike": strike, "price": price}
+                item = Option(desc=description, delta=delta, strike=strike, price=price)
                 """
                 if  delta >= PSS_RANGE[0] and delta <= PSS_RANGE[1]:
                     pss_options.append(item)
@@ -681,20 +658,151 @@ def get_options(option_map, underlying):
                     print(f"skip put option: {description} delta: {delta}")
                 """
                 results.append(item)
-    return results
+    
+    # remove the :nn from expire date 
+    # e.g.: 2020-03-20:47 -> 2020-03-20
+    n = expire_date.find(":")
+    if n > 0:
+        expire_date = expire_date[:n]
+    return (results, expire_date)
     
 
-def get_contracts(chains):
+def get_contracts(symbol, chains):
     underlying = chains["underlyingPrice"]
     putMap = chains["putExpDateMap"]
     callMap = chains["callExpDateMap"]
     
-    put_options = get_options(putMap, underlying)
-    logging.info(f"got {len(put_options)} put options")
-    call_options = get_options(callMap, underlying)
-    logging.info(f"got {len(call_options)} call options")
+    (put_options, put_expire_date) = get_options(putMap, underlying)
+    logging.info(f"got {len(put_options)} put options, expire_date: {put_expire_date}")
+    (call_options, call_expire_date) = get_options(callMap, underlying)
+    logging.info(f"got {len(call_options)} call options, expire_date: {call_expire_date}")
+    if put_expire_date != call_expire_date:
+        logging.error("expected put expire date to equal call expire date")
+        sys.exit(1)
+    # save options to file
+    filename = f"data/{symbol}-{put_expire_date}.txt"
+    with open(filename, 'w') as f:
+        print(f"{symbol}, underlying: {underlying:12.3f}", file=f)
+        desc =   "#           DESCRIPTION"
+        delta =  "       DELTA"
+        price =  "       PRICE"
+        strike = "      STRIKE"
 
+        print(f"{desc:40}{delta:12} {price:12} {strike:12}", file=f)
+       
+        for option in put_options:   
+            desc = option.desc + ',' 
+            print(f"{desc:40}{option.delta:12.3f},{option.price:12.3f},{option.strike:12.3f}", file=f)
+        for option in call_options:  
+            desc = option.desc + ','   
+            print(f"{desc:40}{option.delta:12.3f},{option.price:12.3f},{option.strike:12.3f}", file=f)
+ 
     return {"underlying": underlying, "call": call_options, "put": put_options}   
+
+def load_from_file(symbol, dt_min, dt_max):
+    # search data files for valid file to load
+    logging.info(f"load_file_file({symbol}, {dt_min}, {dt_max})")
+    filenames = os.listdir("data")
+    datafile = None
+    for filename in filenames:
+        if not filename.endswith(".txt"):
+            continue
+        filename = filename[:-4]  # drop extension
+        n = filename.find('-')
+        file_symbol = filename[:n]
+        datestring = filename[(n+1):]
+        if file_symbol != symbol:
+            continue
+         
+        file_date = datetime.fromisoformat(datestring)
+        if file_date > dt_min and file_date < dt_max:
+            datafile = filename
+            break
+    if not datafile:
+        logging.info("no datafile found")
+        return None
+
+    underlying = None
+    calls = []
+    puts = []
+    with open("data/"+datafile+".txt") as f:
+        line = f.readline().strip()
+        # first line should be like: MMM, underlying:      158.630
+        print("got line:", line)
+        n = line.find(":")
+        underlying = float(line[(n+1):])
+        while line:
+            line = f.readline().strip()
+            if not line or line[0] == '#':
+                continue
+            fields = line.split(',')
+            if len(fields) != 4:
+                logging.error(f"unexpected line: {line}")
+                continue
+            desc = fields[0]
+            delta = float(fields[1])
+            price = float(fields[2])
+            strike = float(fields[3])
+            option = Option(desc=desc, delta=delta, strike=strike, price=price)
+            if desc.endswith("Put") or desc.endswith("Put (Weekly)"):
+                puts.append(option)
+            elif desc.endswith("Call") or desc.endswith("Call (Weekly)"):
+                calls.append(option)
+            else:
+                logging.error(f"unexpected desc: [{desc}]")
+
+    logging.info(f"loaded {len(calls)} calls and {len(puts)} puts from file")
+    return {"underlying": underlying, "call": calls, "put": puts}
+        
+
+
+
+
+def prelimination(cs=None, cb=None, ps=None, pb=None):  
+                     
+    logging.info(f"pre elimination check")
+    logging.info(f"strike: {cs.strike:.1f}/{cb.strike:.1f}/{ps.strike:.1f}/{pb.strike:.1f}" )
+
+    if cs.strike >= cb.strike:
+        logging.info("bad call strike: sell>buy")
+        return False
+
+    if pb.strike >= ps.strike:
+        logging.info("bad put strike: buy>sell")
+        return False
+    
+    if ps.strike >= cs.strike:
+        logging.info("bad call/put strikes")
+        return False
+
+    if not ps.price >= pb.price:
+        logging.info('bad price: put sell < buy')
+        return False
+
+    if not cs.price >= cb.price:
+        logging.info("bad price: call sell < buy")
+        return False
+    
+    if cb.strike - cs.strike > WIDTH_SYMMETRY * (ps.strike - pb.strike):
+        logging.info("bad put width: too small")
+        return False
+
+    if ps.strike - pb.strike > WIDTH_SYMMETRY * (cb.strike - cs.strike):
+        logging.info("bad call width: too small")
+        return False
+
+    ssymm = cs.delta + ps.delta
+    logging.info(f"sell symm = {ssymm:.3f}")
+    if not abs(ssymm) < SELL_SYMMETRY:
+        logging.info("bad symmetry: sell")
+        return False
+
+    symm = cs.delta + cb.delta + ps.delta + pb.delta
+    if not abs(symm) < TOTAL_SYMMETRY:
+        logging.info(f"bad symmetry: over all symm = {ssymm:.3f}")
+        return False
+
+    return True
 
 def get_candidates(contracts):
     candidates = []
@@ -706,18 +814,18 @@ def get_candidates(contracts):
     
     for i in range(len(call_list) - 1):
         cs = call_list[i]
-        print("--------cs:", cs["description"], "delta:", cs["delta"])
-        if not check_delta_bound(cs["delta"], option_type="cs"):
+        print("--------cs:", cs.desc, "delta:", cs.delta)
+        if not check_delta_bound(cs.delta, option_type="cs"):
             logging.info("bad bound: call sell delta")
             continue
-        last_strike = cs["strike"]
+        last_strike = cs.strike
         for j in range(i+1, len(call_list)):
             cb = call_list[j]
-            print("------cb:", cb["description"], "delta:", cb["delta"])
-            if not check_delta_bound(cb["delta"], option_type="cb", c_delta=cs["delta"]):
+            print("------cb:", cb.desc, "delta:", cb.delta)
+            if not check_delta_bound(cb.delta, option_type="cb", c_delta=cs.delta):
                 logging.info("bad bound: call buy delta")
                 continue
-            this_strike = cb["strike"]
+            this_strike = cb.strike
             
             if this_strike <= last_strike:
                 logging.info(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
@@ -725,18 +833,18 @@ def get_candidates(contracts):
 
             for k in range(len(put_list) - 1):
                 ps = put_list[k]
-                print("----ps:", ps["description"], "delta:", ps["delta"])
-                if not check_delta_bound(ps["delta"], option_type="ps", c_delta=cs["delta"]):
+                print("----ps:", ps.desc, "delta:", ps.delta)
+                if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
                     logging.info("bad bound: put buy delta")
                     continue
-                last_strike = ps["strike"]
+                last_strike = ps.strike
                 for l in range(0, k):
                     pb = put_list[l]
-                    print("--pb:", pb["description"], "delta:", pb["delta"])
-                    if not check_delta_bound(ps["delta"], option_type="pb", c_delta=ps["delta"]):
+                    print("--pb:", pb.desc, "delta:", pb.delta)
+                    if not check_delta_bound(ps.delta, option_type="pb", c_delta=ps.delta):
                         logging.info("bad bound: put sell delta")
                         continue
-                    this_strike = pb["strike"]
+                    this_strike = pb.strike
                     if this_strike >= last_strike:
                         logging.info(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
                         sys.exit(1)
@@ -755,7 +863,7 @@ def get_candidates(contracts):
         
 
 def print_usage():
-    print("usage: python get_options.py [--skip-delta] [--sort prop] SYM")
+    print("usage: python get_options.py [--skip-delta] [--sort prop] [--reload] SYM")
 
 
 #
@@ -766,6 +874,7 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
     sys.exit(1)
 
 symbols = []
+reload = False
 ARGS["skip_delta"] = False
 ARGS["sort_key"] = "et"
 sort_keys = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
@@ -793,8 +902,10 @@ for argn in range(1, len(sys.argv)):
     elif argval.startswith('-'):
         if argval == "--skip-delta":
             ARGS["skip_delta"] = True
+        elif argval == "--reload":
+            reload = True
         elif argval == "--sort":
-            sort_key_arg = True
+            sort_key_arg = True       
         else:
             print_usage()
             sys.exit(1)
@@ -805,17 +916,30 @@ if not symbols:
     sys.exit(1)
 symbol = symbols[0]
 print("getting symbol:", symbol)
-chains = get_chains(symbol)
-if not chains:
-    print("could not get any options")
-    sys.exit(1)
-contracts = get_contracts(chains)
+seconds_in_day = 24.0 * 60.0 * 60.0
+exp_target_min = time.time() + 41.0 * seconds_in_day
+dt_min = datetime.fromtimestamp(exp_target_min)
+exp_target_max = time.time() + 60.0 * seconds_in_day
+dt_max = datetime.fromtimestamp(exp_target_max)
+    
+contracts = None
+if not reload:
+    # see if we can load from previous file
+    contracts = load_from_file(symbol, dt_min, dt_max)
+
+if not contracts:
+    chains = get_chains(symbol, dt_min, dt_max)
+    if not chains:
+        print("could not get any options")
+        sys.exit(1)
+    contracts = get_contracts(symbol, chains)
+    print("contracts:", contracts)
 
 for k in ("call", "put"):
     options = contracts[k]
     print(k, len(options))
     for option in options:
-        print(option["description"], option["delta"])
+        print(option.desc, option.delta)
 
 for k in ("call", "put"):
     options = contracts[k]
