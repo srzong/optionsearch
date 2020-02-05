@@ -17,9 +17,13 @@ ET_BOUND = 0.0
 ET_WIDTH_BOUND = 0
 TC_WIDTH_BOUND = 0
 
-SELL_SYMMETRY = 0.1
+SELL_SYMMETRY = 0.05
 TOTAL_SYMMETRY = 0.25
 WIDTH_SYMMETRY = 2
+
+SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
+
+NON_REVERSE_SORT = {"width", "ml", "symm"}
 
 loglevel = logging.ERROR  # DEBUG or INFO or ERROR
 
@@ -63,17 +67,6 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
         return True
 
     return False
-
-"""
-def option_str(option):
-    desc = option["description"]
-    delta = option["delta"]
-    strike = option["strike"]
-    price = option["price"]
-
-    s = f"{desc} -- delta: {delta:.2f} price: {price:.2f} strike: {strike} "
-    return s
-"""
 
 class bcolors:
     HEADER = '\033[95m'
@@ -139,14 +132,17 @@ class Candidate:
         self._ps = ps
         self._pb = pb
         self._underlying = underlying
-        self._tc_rank = None
-        self._et_rank = None
-        self._et_width_rank = None
-        self._et_tc_rank = None
-        self._tc_width_rank = None
-        self._ml_rank = None
-        self._winet_rank = None
-        self._symm_rank = None
+        self._tc_rank = [None, None]
+        self._tc_ml_rank = [None, None]
+        self._et_ml_rank = [None, None]
+        self._et_rank = [None, None]
+        self._et_width_rank = [None, None]
+        self._et_tc_rank = [None, None]
+        self._width_rank = [None, None]
+        self._tc_width_rank = [None, None]
+        self._ml_rank = [None, None]
+        self._winet_rank = [None, None]
+        self._symm_rank = [None, None]
 
         css = cs.strike
         cbs = cb.strike
@@ -298,6 +294,7 @@ class Candidate:
             for propname in ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet"):
                 propval = self.get_prop(propname)
                 proprank = self.get_rank(propname)
+                proporder = self.get_rank(propname, byorder=True)
 
                 s = f"{propname}: {propval:.3f}"
                 if proprank:
@@ -307,7 +304,8 @@ class Candidate:
                 if min_vals and max_vals:
                     min_val = min_vals[propname]
                     max_val = max_vals[propname]
-                    s += f" [{min_val:.2f}-{max_val:.2f}]"
+                    percent = int((propval - min_val) * 100.0 / (max_val - min_val))
+                    s += f" [{min_val:.2f}-{max_val:.2f}] {percent}%"
                 if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                     s += " *"
                 print(s)
@@ -473,65 +471,73 @@ class Candidate:
         logging.error(f"set_prop unexpected propname: [{propname}]")
         sys.exit(1)
 
-    def get_rank(self, propname):
+    def get_rank(self, propname, byorder=False):
+        if byorder:
+            i = 1
+        else:
+            i = 0
         if propname == "tc_ml":
-            return self._tc_ml_rank
+            return self._tc_ml_rank[i]
         if propname == "et":
-            return self._et_rank
+            return self._et_rank[i]
         if propname == "et_ml":
-            return self._et_ml_rank
+            return self._et_ml_rank[i]
         if propname == "tc_width":
-            return self._tc_width_rank
+            return self._tc_width_rank[i]
         if propname == "et_width":
-            return self._et_width_rank
+            return self._et_width_rank[i]
         if propname == "et_tc":
-            return self._et_tc_rank
+            return self._et_tc_rank[i]
         if propname == "tc":
-            return self._tc_rank
+            return self._tc_rank[i]
         if propname == "width":
-            return self._width_rank
+            return self._width_rank[i]
         if propname == "ml":
-            return self._ml_rank
+            return self._ml_rank[i]
         if propname == "symm":
-            return self._symm_rank    
+            return self._symm_rank[i]    
         if propname == "winet":
-            return self._winet_rank          
+            return self._winet_rank[i]          
         logging.error(f"get_rank unexpected propname: [{propname}]")
         sys.exit(1)
 
-    def set_rank(self, propname, value):
+    def set_rank(self, propname, value, byorder=False):
+        if byorder:
+            i = 1
+        else:
+            i = 0
         if propname == "tc_ml":
-            self._tc_ml_rank = value
+            self._tc_ml_rank[i] = value
             return
         if propname == "et":
-            self._et_rank = value
+            self._et_rank[i] = value
             return
         if propname == "et_ml":
-            self._et_ml_rank = value
+            self._et_ml_rank[i] = value
             return
         if propname == "tc_width":
-            self._tc_width_rank = value
+            self._tc_width_rank[i] = value
             return
         if propname == "et_width":
-            self._et_width_rank = value
+            self._et_width_rank[i] = value
             return
         if propname == "et_tc":
-            self._et_tc_rank = value
+            self._et_tc_rank[i] = value
             return
         if propname == "tc":
-            self._tc_rank = value
+            self._tc_rank[i] = value
             return
         if propname == "width":
-            self._width_rank = value
+            self._width_rank[i] = value
             return
         if propname == "ml":
-            self._ml_rank = value
+            self._ml_rank[i] = value
             return
         if propname == "symm":
-            self._symm_rank = value
+            self._symm_rank[i] = value
             return   
         if propname == "winet":
-            self._winet_rank = value
+            self._winet_rank[i] = value
             return
         logging.error(f"set_rank unexpected propname: [{propname}]")
         sys.exit(1)
@@ -877,7 +883,6 @@ symbols = []
 reload = False
 ARGS["skip_delta"] = False
 ARGS["sort_key"] = "et"
-sort_keys = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
 
 # setup logging
 root = logging.getLogger()
@@ -893,8 +898,8 @@ sort_key_arg = False
 for argn in range(1, len(sys.argv)):
     argval = sys.argv[argn]
     if sort_key_arg:
-        if argval not in sort_keys:
-            print("sort key must be one of:", sort_keys)
+        if argval not in SORT_KEYS:
+            print("sort key must be one of:", SORT_KEYS)
             sys.exit(1)
         ARGS["sort_key"] = argval
         
@@ -951,19 +956,31 @@ print("got", len(candidates), "candidates")
 print("======================")
 
 
-for propname in sort_keys:
+for propname in SORT_KEYS:
     print("sorting by:", propname)
-    candidates.sort(key = lambda candidate: candidate.get_prop(propname), reverse=True)
+    if propname in NON_REVERSE_SORT:
+        reverse = False
+    else:
+        reverse = True
+    candidates.sort(key = lambda candidate: candidate.get_prop(propname), reverse=reverse)
     rank = 1
+    order = 1
+    prev = None
     for candidate in candidates:
+        candidate.set_rank(propname, order, byorder=True)
+        val = candidate.get_prop(propname)
+        if prev:
+            if abs(val - prev) > 0.001:
+                rank = order
         candidate.set_rank(propname, rank)
-        rank += 1
+        order += 1
+        prev = val
 
 
 print("======================")
 sort_key = ARGS["sort_key"]
 print(f"sorting by: [{sort_key}]")
-candidates.sort(key = lambda candidate: candidate.get_prop(sort_key), reverse=True)
+candidates.sort(key = lambda candidate: candidate.get_rank(sort_key,byorder=True))
 
 
 printCandidates(candidates)
