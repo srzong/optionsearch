@@ -7,9 +7,9 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165,0.36)
+CS_DELTA_RANGE = (0.165,0.32)
 CB_DELTA_RANGE = (0.01,0.25)
-PS_DELTA_RANGE = (-0.36,-0.165)
+PS_DELTA_RANGE = (-0.32,-0.165)
 PB_DELTA_RANGE = (-0.25,-0.01)
 
 WINET_BOUND = 0.1
@@ -17,7 +17,7 @@ ET_BOUND = 0.0
 ET_WIDTH_BOUND = 0
 TC_WIDTH_BOUND = 0
 
-SELL_SYMMETRY = 0.05
+SELL_SYMMETRY = 0.12
 TOTAL_SYMMETRY = 0.25
 WIDTH_SYMMETRY = 2
 
@@ -25,7 +25,7 @@ SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
 
-loglevel = logging.ERROR  # DEBUG or INFO or ERROR
+loglevel = logging.DEBUG  # DEBUG or INFO or ERROR
 
 
 def check_delta_bound(delta, option_type=None, c_delta=None):
@@ -47,6 +47,9 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
         ubnd = -c_delta + SELL_SYMMETRY
         if not ubnd < PS_DELTA_RANGE[1]:
             ubnd = PS_DELTA_RANGE[1]
+        
+        logging.debug(f"ps: c_delta= {c_delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
+    
     elif option_type == "pb":
         lbnd = PB_DELTA_RANGE[0]
         ubnd = PB_DELTA_RANGE[1]
@@ -291,6 +294,7 @@ class Candidate:
         print("----")
         
         if self._et:
+            
             for propname in ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet"):
                 propval = self.get_prop(propname)
                 proprank = self.get_rank(propname)
@@ -305,10 +309,14 @@ class Candidate:
                     min_val = min_vals[propname]
                     max_val = max_vals[propname]
                     percent = int((propval - min_val) * 100.0 / (max_val - min_val))
-                    s += f" [{min_val:.2f}-{max_val:.2f}] {percent}%"
+                    s += f" [{min_val:.3f}-{max_val:.3f}] {percent}%"
                 if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                     s += " *"
                 print(s)
+            ssymm = self._cs.delta + self._ps.delta
+            print(f"sell symm: {ssymm:.3f} ")
+
+
     
     @property
     def cs(self):
@@ -561,15 +569,15 @@ class Candidate:
             logging.info("BAD tail: call")
             return False  
 
+        if self._et <= ET_BOUND:
+            logging.info(f"BAD et: {self._et:.3f} <= {ET_BOUND}")
+            return False
+
         if not self.et_width >= ET_WIDTH_BOUND:
             logging.info(f"BAD et/width check: {self.et_width} < {ET_WIDTH_BOUND}")
             return False
         if not self.tc_width >= TC_WIDTH_BOUND:
             logging.info(f"BAD tc/width check: {self.tc_width} < {TC_WIDTH_BOUND}")
-            return False
-
-        if self._et <= ET_BOUND:
-            logging.info(f"BAD et: {self._et:3f} <= {ET_BOUND}")
             return False
     
         return True
@@ -837,16 +845,20 @@ def get_candidates(contracts):
                 logging.DEBUG(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
                 sys.exit(1)
 
-            for k in range(len(put_list) - 1):
+            for k in range(2, len(put_list) - 2):
                 ps = put_list[k]
                 logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
-                if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
-                    logging.info("BAD bound: put sell delta")
-                    continue
+                logging.info(f"ps strike: {ps.strike} ps+1.strike: { put_list[k+1].strike}")
+                logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
+
+                if (not ps.strike <= 2*underlying - cs.strike < put_list[k+1].strike) and (not put_list[k-1].strike <= 2*underlying - cs.strike < ps.strike):
+                    if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
+                        logging.info("BAD bound: put sell delta")
+                        continue
                 last_strike = ps.strike
                 for l in range(0, k):
                     pb = put_list[l]
-                    logging.info(f"--pb: {pb.desc} delta: {pb.delta}")
+                    logging.info(f"--pb: {pb.desc} delta: {pb.delta} ps.strike: {ps.strike}")
                     if not check_delta_bound(pb.delta, option_type="pb", c_delta=ps.delta):
                         logging.info("BAD bound: put buy delta")
                         continue
