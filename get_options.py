@@ -7,19 +7,19 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165,0.32)
-CB_DELTA_RANGE = (0.01,0.25)
-PS_DELTA_RANGE = (-0.32,-0.165)
-PB_DELTA_RANGE = (-0.25,-0.01)
+CS_DELTA_RANGE = (0.165, 0.32)
+CB_DELTA_RANGE = (0.01, 0.25)
+PS_DELTA_RANGE = (-0.32, -0.165)
+PB_DELTA_RANGE = (-0.25, -0.01)
 
 WINET_BOUND = 0.1
 ET_BOUND = 0.0
 ET_WIDTH_BOUND = 0
 TC_WIDTH_BOUND = 0
 
-SELL_SYMMETRY = 0.12
-TOTAL_SYMMETRY = 0.25
-WIDTH_SYMMETRY = 2
+SELL_SYMMETRY = 1 #0.12
+TOTAL_SYMMETRY = 1 #0.25
+WIDTH_SYMMETRY = 1 #1, no use
 
 SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
 
@@ -41,13 +41,18 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
             if c_delta > ubnd:
                 ubnd = c_delta 
     elif option_type == "ps":
-        lbnd = -c_delta - SELL_SYMMETRY
+        lbnd = PS_DELTA_RANGE[0]
+        ubnd = PS_DELTA_RANGE[1]
+        if ubnd < -c_delta: 
+            ubnd = -c_delta
+        """
+        lbnd = -c_delta - SELL_
         if lbnd < PS_DELTA_RANGE[0]:
             lbnd = PS_DELTA_RANGE[0]
-        ubnd = -c_delta + SELL_SYMMETRY
+        ubnd = -c_delta + SELL_
         if not ubnd < PS_DELTA_RANGE[1]:
             ubnd = PS_DELTA_RANGE[1]
-        
+        """
         logging.debug(f"ps: c_delta= {c_delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
     
     elif option_type == "pb":
@@ -298,7 +303,6 @@ class Candidate:
             for propname in ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet"):
                 propval = self.get_prop(propname)
                 proprank = self.get_rank(propname)
-                proporder = self.get_rank(propname, byorder=True)
 
                 s = f"{propname}: {propval:.3f}"
                 if proprank:
@@ -798,11 +802,11 @@ def prelimination(cs=None, cb=None, ps=None, pb=None):
         return False
     
     if cb.strike - cs.strike > WIDTH_SYMMETRY * (ps.strike - pb.strike):
-        logging.info(f"BAD width radio call:put {cb.strike - cs.strike} : {ps.strike - pb.strike}")
+        logging.info(f"BAD width ratio call:put {cb.strike - cs.strike} : {ps.strike - pb.strike}")
         return False
 
     if ps.strike - pb.strike > WIDTH_SYMMETRY * (cb.strike - cs.strike):
-        logging.info(f"BAD width radio: put:call {ps.strike - pb.strike} : {cb.strike - cs.strike}")
+        logging.info(f"BAD width ratio: put:call {ps.strike - pb.strike} : {cb.strike - cs.strike}")
         return False
 
     ssymm = cs.delta + ps.delta
@@ -816,6 +820,30 @@ def prelimination(cs=None, cb=None, ps=None, pb=None):
         logging.info(f"BAD symmetry: over all symm = {ssymm:.3f} < {TOTAL_SYMMETRY}")
         return False
 
+    return True
+
+def get_ps(cs, ps, ps_1, ps1, underlying):
+    logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
+    logging.info(f"get_ps -- cs: {cs} ps: {ps} ps_1: {ps_1}  ps1: {ps1}  underlying: {underlying}")
+    logging.info(f"ps strike: {ps.strike} ps+1.strike: { ps1.strike}")
+    logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
+
+    if (ps_1.strike < 2*underlying - cs.strike and 2*underlying - cs.strike <= ps.strike) or (ps.strike < 2*underlying - cs.strike and 2*underlying - cs.strike < ps1.strike):
+        logging.info(f"picked by strike: ps.strike = {ps.strike} cs.strike = { cs.strike}")
+        return True
+
+    logging.info(f"delta ??? cs.delta = { cs.delta} ps_1.delta = {ps_1.delta} ps.delta = {ps.delta} ps1.delta = { ps1.delta}")
+
+    if (-ps_1.delta < cs.delta and cs.delta <= -ps.delta) or (-ps.delta < cs.delta and cs.delta < -ps1.delta):
+        logging.info(f"picked by delta: ps.delta = {ps.delta} cs.delta = { cs.delta}")
+        logging.info(f"ps_1.delta = {ps_1.delta} ps1.delta = { ps1.delta}")
+        return True
+
+    if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
+        logging.info("BAD bound: put sell delta")
+        return False
+
+    logging.info("get_ps returning True")
     return True
 
 def get_candidates(contracts):
@@ -844,9 +872,15 @@ def get_candidates(contracts):
             if this_strike <= last_strike:
                 logging.DEBUG(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
                 sys.exit(1)
-
-            for k in range(2, len(put_list) - 2):
+            
+            logging.info(f"search by k in {2}, {len(put_list) - 1}")
+            for k in range(2, len(put_list) - 1):
+                logging.info(f"---search by k in {k}")
                 ps = put_list[k]
+                if not get_ps(cs, ps, put_list[k-1], put_list[k+1], underlying):
+                    logging.info(f"BAD ps: {ps.desc}")
+                    continue
+                """
                 logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
                 logging.info(f"ps strike: {ps.strike} ps+1.strike: { put_list[k+1].strike}")
                 logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
@@ -855,6 +889,7 @@ def get_candidates(contracts):
                     if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
                         logging.info("BAD bound: put sell delta")
                         continue
+                """
                 last_strike = ps.strike
                 for l in range(0, k):
                     pb = put_list[l]
@@ -867,7 +902,8 @@ def get_candidates(contracts):
                         logging.info(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
                         sys.exit(1)
 
-                    if prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
+                    logging.info(f"pre IC: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
+                    if True or prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
                         candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
                         total_count += 1
                         if  candidate.meets_requirements():
