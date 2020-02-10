@@ -21,7 +21,7 @@ SELL_SYMMETRY = 1 #0.12
 TOTAL_SYMMETRY = 1 #0.25
 WIDTH_SYMMETRY = 1 #1, no use
 
-SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
+SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
 
@@ -140,33 +140,85 @@ class Candidate:
         self._ps = ps
         self._pb = pb
         self._underlying = underlying
-        self._tc_rank = [None, None]
-        self._tc_ml_rank = [None, None]
-        self._et_ml_rank = [None, None]
-        self._et_rank = [None, None]
-        self._et_width_rank = [None, None]
-        self._et_tc_rank = [None, None]
-        self._width_rank = [None, None]
-        self._tc_width_rank = [None, None]
-        self._ml_rank = [None, None]
-        self._winet_rank = [None, None]
-        self._symm_rank = [None, None]
+        self._props = {}
+        self._prop_ranks = {}   
+        self._prop_orders = {}
+        logging.info(f"Candidate(cs={cs}, cb={cb}, ps={ps}, pb={pb})")
 
+        # expected props when cs, cb, ps, and pb are defined:
+        # tc
+        # tc_ml
+        # et_ml
+        # et
+        # et_width
+        # et_tc
+        # width
+        # tc_width
+        # ml
+        # winet
+        # symm
+        
+        if cs and cb and not ps and not pb:
+            tcc = cs.price - cb.price
+            width = cb.strike - cs.strike
+            if not width:
+                return
+            delta_cc = 1.0 - cs.delta
+            delta_cch = tcc * (cs.delta - cb.delta)/width
+            delta_clh = cs.delta - cb.delta - delta_cch
+            cl = width - tcc
+            ecc = tcc * delta_cc
+            ecch = 0.5 * tcc * delta_cch
+            eclh = -0.5 * cl * delta_clh
+            ecl = -cl * cb.delta
+            et = ecc + ecch + eclh + ecl
+            tcc_w = tcc / width
+            logging.info(f"tcc: {tcc:.3f}")
+            logging.info(f"w: {width:.3f}")
+            logging.info(f"cs.strike: {cs.strike:.3f}  cs.price: {cs.price:.3f}  cs.delta: {cs.delta}")
+            logging.info(f"cb.strike: {cb.strike:.3f}  cb.price: {cb.price:.3f}  cb.delta: {cb.delta}")
+            logging.info(f"delta_cc: {delta_cc:.3f}  delta_cch: {delta_cch:.3f}  delta_clh: {delta_clh:.3f}")
+            logging.info(f"cl: {cl:.3f}")
+            logging.info(f"ecc: {ecc:.3f}  ecch: {ecch:.3f}  eclh: {eclh:.3f}  ecl: {ecl:.3f}") 
+            logging.info(f"et: {et:.3f}")
+            logging.info(f"tcc/w: {tcc_w:.3f}")
+
+            self._props["tcc"] = tcc
+            self._props["width"] = width
+            self._props["tcc_w"] = tcc_w
+            self._props["et"] = et
+            return
+        elif ps and pb and not cs and not cb:
+            tcc = pb.price - ps.price
+            width = ps.strike - pb.strike
+            if width:
+                tcc_w = tcc / width
+                self._props["tcc"] = tcc
+                self._props["width"] = width
+                self._props["tcc_w"] = tcc_w
+            return
+        elif not cs or not cb or not ps or not pb:
+            logging.warn("unexpected candidate constructor")
+            return
+        
+        # calculations based on cs, cb, ps, and pb being set
         css = cs.strike
-        cbs = cb.strike
-        pss = ps.strike
-        pbs = pb.strike
         csp = cs.price
-        cbp = cb.price
-        psp = ps.price
-        pbp = pb.price
         csd = cs.delta
+        cbs = cb.strike
+        cbp = cb.price
         cbd = cb.delta
+        pss = ps.strike
+        psp = ps.price
         psd = ps.delta
+         
+        pbs = pb.strike
+        pbp = pb.price
         pbd = pb.delta 
-
+        
         logging.info("******************")
         logging.info(f"Cand IC: {css}/{cbs}/{pss}/{pbs}" )
+        
         logging.info(f"strike: {css:8.1f}  {cbs:8.1f}  {pss:8.1f}  {pbs:8.1f}" )
         logging.info(f"delta:  {csd:8.3f}  {cbd:8.3f}  {psd:8.3f}  {pbd:8.3f}" )
         logging.info(f"price:  {csp:8.3f}  {cbp:8.3f}  {psp:8.3f}  {pbp:8.3f}" )
@@ -222,7 +274,7 @@ class Candidate:
             ecd = -cd * cbd 
             epd = pd * pbd 
             et = etc + ecch + ecdh + epch + epdh + ecd + epd
-            winet = etc + ecch + epch
+            #winet = etc + ecch + epch
             """
             logging.info(f"etc: {etc:.3f}")
             logging.info(f"ecch: {ecch:.3f}")
@@ -231,10 +283,10 @@ class Candidate:
             logging.info(f"epdh: {epdh:.3f}")
             logging.info(f"ecd: {ecd:.3f}")
             logging.info(f"epd: {epd:.3f}")
-            """
+            
             logging.info(f"et: {et:.3f}")
             logging.info(f"winet: {winet:.3f}")    
-
+"""
             tc_width = tc / width
             et_width = et/width
             et_tc = et/tc
@@ -247,60 +299,57 @@ class Candidate:
             et_ml = et/ml
             tc_ml = tc/ml
             et_tc = et/tc
-
+            """
             logging.info(f"ml: {ml:.3f}")
             logging.info(f"tc/ml: {tc_ml:.3f}")
             logging.info(f"et/ml: {et_ml:.3f}")
             logging.info(f"tc/width: {tc_width:.3f}")
             logging.info(f"et/width: {et_width:.3f}")
             logging.info(f"et/tc: {et_tc:.3f}")
-
-            # properties
-            self._tc = tc
-            self._width = width
-            self._et = et
-            self._tc_width = tc_width
-            self._et_width = et_width
-            self._et_tc = et_tc
-            self._ml = ml
-            self._et_ml = et_ml
-            self._tc_ml = tc_ml
-            self._symm = abs(symm)
-            self._winet = winet
+            """
+            # set properties
+            self._props["tc"] = tc
+            self._props["width"] = width
+            self._props["et"] = et
+            self._props["tc_width"] = tc_width
+            self._props["et_width"] = et_width
+            self._props["et_tc"] = et_tc
+            self._props["ml"] = ml
+            self._props["et_ml"] = et_ml
+            self._props["tc_ml"] = tc_ml
+            self._props["symm"] = abs(symm)
+            self._props["winet"] = winet
         except ZeroDivisionError:
             logging.info("zerodivisionerror")
-            #raise e
-            #sys.exit(1)
-            self._tc = None
-            self._width = None
-            self._et = None
-            self._tc_width = None
-            self._et_width = None
-            self._et_tc = None
-            self._ml = None
-            self._et_ml = None
-            self._tc_ml = None
-            self._symm = None
-            self._winet = None
-
-    
+              
     def __str__(self):
         return f"{self._cs}/{self._cb}/{self._pb}/{self._ps}"
 
     def print_verbose(self, total=None, min_vals=None, max_vals=None):
         #print(candidate.keys())
         print() 
-
-        print(f"IC: {self._cs.strike}/{self._cb.strike}/{self._ps.strike}/{self._pb.strike}" )
-        print("cs:", self._cs)
-        print("cb:", self._cb)
-        print("ps:", self._ps)
-        print("pb:", self._pb)
+        if self._cs and self._cb and self._ps and self._pb:
+            print(f"IC: {self._cs.strike}/{self._cb.strike}/{self._ps.strike}/{self._pb.strike}" )
+        if self._cs:
+            print("cs:", self._cs)
+        if self._cb:
+            print("cb:", self._cb)
+        if self._ps:
+            print("ps:", self._ps)
+        if self._pb:
+            print("pb:", self._pb)
         print("----")
         
-        if self._et:
+        if "et" in self._props:
+            if self._cs and self._cb and not self._ps and not self._pb:
+                propnames = ("et", "tcc", "width", "tcc_w")
+            elif self._ps and self._pb and not self._cs and not self._cb:
+                propnames = ()  # TBD
+            else:
+                propnames = ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet")
+
             
-            for propname in ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet"):
+            for propname in propnames:
                 propval = self.get_prop(propname)
                 proprank = self.get_rank(propname)
 
@@ -317,11 +366,10 @@ class Candidate:
                 if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                     s += " *"
                 print(s)
-            ssymm = self._cs.delta + self._ps.delta
-            print(f"sell symm: {ssymm:.3f} ")
-
-
-    
+            if self._cs and self._ps:
+                ssymm = self._cs.delta + self._ps.delta
+                print(f"sell symm: {ssymm:.3f} ")
+ 
     @property
     def cs(self):
         return self._cs
@@ -342,246 +390,92 @@ class Candidate:
     def underlying(self):
         return self._underlying
 
-    @property
-    def tc(self):
-        return 
-    @property
-    def width(self):
-        return self._width
-
-    @property
-    def et(self):
-        return self._et
-    
-    @property
-    def tc_width(self):
-        return self._tc_width
-
-    @property
-    def et_width(self):
-        return self._et_width
-
-    @property
-    def et_tc(self):
-        return self._et_tc
-
-    @property
-    def ml(self):
-        return self._ml
-    
-    @property
-    def et_ml(self):
-        return self._et_ml
-
-    @property
-    def tc_ml(self):
-        return self._tc_ml
-
-    @property
-    def tc_rank(self):
-        return self._tc_rank
-
-    @property
-    def et_width_rank(self):
-        return self._et_width_rank
-
-    @property
-    def et_tc_rank(self):
-        return self._et_tc_rank
-
-    @property
-    def symm(self):
-        return self._symm
-
-    @property
-    def symm_rank(self):
-        return self._symm_rank   
-
-    @property
-    def winet(self):
-        return self._winet
-
-    @property
-    def winet_rank(self):
-        return self._winet_rank                   
-
-    def set_tc_rank(self, rank):
-        self._tc_rank = rank
-
-    def set_et_width_rank(self, rank):
-        self._et_width_rank = rank
-
-    def set_et_tc_rank(self, rank):
-        self._et_tc_rank = rank
-
-    def set_symm_rank(self, rank):
-        self._symm_rank = rank
-
-    def set_winet_rank(self, rank):
-        self._winet_rank = rank
+    def get_props(self):
+        return self._props.keys()
 
     def get_prop(self, propname):
-        if propname == "tc_ml":
-            return self._tc_ml
-        if propname == "et":
-            return self._et
-        if propname == "et_ml":
-            return self._et_ml
-        if propname == "tc_width":
-            return self._tc_width
-        if propname == "et_width":
-            return self._et_width
-        if propname == "et_tc":
-            return self._et_tc
-        if propname == "tc":
-            return self._tc
-        if propname == "width":
-            return self._width
-        if propname == "ml":
-            return self._ml
-        if propname == "symm":
-            return self._symm     
-        if propname == "winet":
-            return self._winet 
-        logging.error(f"get_prop unexpected propname: [{propname}]")
-        sys.exit(1)
+        if propname in self._props:
+            return self._props[propname]
+         
+        logging.warn(f"get_prop unexpected propname: [{propname}]")
 
+    def has_prop(self, propname):
+        return propname in self._props
+         
     def set_prop(self, propname, value):
-        if propname == "tc_ml":
-            self._tc_ml = value
-            return
-        if propname == "et":
-            self._et = value
-            return
-        if propname == "et_ml":
-            self._et_ml = value
-            return
-        if propname == "tc_width":
-            self._tc_width = value
-            return
-        if propname == "et_width":
-            self._et_width = value
-            return
-        if propname == "et_tc":
-            self._et_tc = value
-            return
-        if propname == "tc":
-            self._tc = value
-            return
-        if propname == "width":
-            self._width = value
-            return
-        if propname == "ml":
-            self._ml = value
-            return
-        if propname == "symm":
-            self._symm = value
-            return  
-        if propname == "winet":
-            self._winet = value
-            return                      
-        logging.error(f"set_prop unexpected propname: [{propname}]")
-        sys.exit(1)
+        if propname in self._props:
+            self._props[propname] = value
+        logging.warn(f"set_prop unexpected propname: [{propname}]")
+         
 
-    def get_rank(self, propname, byorder=False):
-        if byorder:
-            i = 1
-        else:
-            i = 0
-        if propname == "tc_ml":
-            return self._tc_ml_rank[i]
-        if propname == "et":
-            return self._et_rank[i]
-        if propname == "et_ml":
-            return self._et_ml_rank[i]
-        if propname == "tc_width":
-            return self._tc_width_rank[i]
-        if propname == "et_width":
-            return self._et_width_rank[i]
-        if propname == "et_tc":
-            return self._et_tc_rank[i]
-        if propname == "tc":
-            return self._tc_rank[i]
-        if propname == "width":
-            return self._width_rank[i]
-        if propname == "ml":
-            return self._ml_rank[i]
-        if propname == "symm":
-            return self._symm_rank[i]    
-        if propname == "winet":
-            return self._winet_rank[i]          
-        logging.error(f"get_rank unexpected propname: [{propname}]")
-        sys.exit(1)
+    def get_rank(self, propname):
+        if propname not in self._props:
+            logging.error(f"get_rank, unexpected propname: {propname}")
+            return None
+        if propname not in self._prop_ranks:
+            logging.warn(f"rank not set for {propname}")
+            return None
+        return self._prop_ranks[propname]
+ 
 
-    def set_rank(self, propname, value, byorder=False):
-        if byorder:
-            i = 1
-        else:
-            i = 0
-        if propname == "tc_ml":
-            self._tc_ml_rank[i] = value
-            return
-        if propname == "et":
-            self._et_rank[i] = value
-            return
-        if propname == "et_ml":
-            self._et_ml_rank[i] = value
-            return
-        if propname == "tc_width":
-            self._tc_width_rank[i] = value
-            return
-        if propname == "et_width":
-            self._et_width_rank[i] = value
-            return
-        if propname == "et_tc":
-            self._et_tc_rank[i] = value
-            return
-        if propname == "tc":
-            self._tc_rank[i] = value
-            return
-        if propname == "width":
-            self._width_rank[i] = value
-            return
-        if propname == "ml":
-            self._ml_rank[i] = value
-            return
-        if propname == "symm":
-            self._symm_rank[i] = value
-            return   
-        if propname == "winet":
-            self._winet_rank[i] = value
-            return
-        logging.error(f"set_rank unexpected propname: [{propname}]")
-        sys.exit(1)
-
+    def set_rank(self, propname, value):
+        if propname not in self._props:
+            logging.error(f"set_rank, unexpected propname: {propname}")
+            return 
+        
+        self._prop_ranks[propname] = value
+         
+    def get_order(self, propname):
+        if propname not in self._props:
+            logging.error(f"get_order, unexpected propname: {propname}")
+            return None
+        if propname not in self._prop_orders:
+            logging.warn(f"order not set for {propname}")
+            return None
+        return self._prop_orders[propname]
     
-
-
+    def set_order(self, propname, value):
+        if propname not in self._props:
+            logging.error(f"set_order, unexpected propname: {propname}")
+            return
+        
+        self._prop_orders[propname] = value
 
     def meets_requirements(self):
         logging.info(f"requirements check")
 
-        if self._winet <= WINET_BOUND:
-            logging.info(f"BAD winet: {self._winet}")
+        for propname in ("winet", "et", "tc", "et_width", "tc_width"):
+            if propname not in self._props:
+                logging.info(f"meet_requirements, {propname} not set")
+                return False
+
+        winet = self._props["winet"]
+        et = self._props["et"]
+        et_width = self._props["et_width"]
+        tc = self._props["tc"]
+        tc_width = self._props["tc_width"]
+
+        if winet <= WINET_BOUND:
+            logging.info(f"BAD winet: {winet}")
             return False
 
-        if self._ps.strike - self._pb.strike <= self._tc:
+        if self._ps.strike - self._pb.strike <= tc:
             logging.info("BAD tail: put")
             return False   
 
-        if self._cb.strike - self._cs.strike <= self._tc:
+        if self._cb.strike - self._cs.strike <= tc:
             logging.info("BAD tail: call")
             return False  
 
-        if self._et <= ET_BOUND:
-            logging.info(f"BAD et: {self._et:.3f} <= {ET_BOUND}")
+        if et <= ET_BOUND:
+            #logging.info(f"BAD et: {et:.3f} <= {ET_BOUND}")
             return False
 
-        if not self.et_width >= ET_WIDTH_BOUND:
-            logging.info(f"BAD et/width check: {self.et_width} < {ET_WIDTH_BOUND}")
+        if et_width < ET_WIDTH_BOUND:
+            logging.info(f"BAD et/width check: {et_width} < {ET_WIDTH_BOUND}")
             return False
-        if not self.tc_width >= TC_WIDTH_BOUND:
-            logging.info(f"BAD tc/width check: {self.tc_width} < {TC_WIDTH_BOUND}")
+        if tc_width < TC_WIDTH_BOUND:
+            logging.info(f"BAD tc/width check: {tc_width} < {TC_WIDTH_BOUND}")
             return False
     
         return True
@@ -591,11 +485,14 @@ class Candidate:
 
 def printCandidates(candidates):
     total = len(candidates)
-    propnames = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet")
+    propnames = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
+
     min_vals = {}
     max_vals = {}
     for candidate in candidates:
         for propname in propnames:
+            if not candidate.has_prop(propname):
+                continue
             val = candidate.get_prop(propname)
             if propname in min_vals:
                 if val < min_vals[propname]:
@@ -684,7 +581,6 @@ def get_options(option_map, underlying):
         expire_date = expire_date[:n]
     return (results, expire_date)
     
-
 def get_contracts(symbol, chains):
     underlying = chains["underlyingPrice"]
     putMap = chains["putExpDateMap"]
@@ -773,9 +669,6 @@ def load_from_file(symbol, dt_min, dt_max):
     return {"underlying": underlying, "call": calls, "put": puts}
         
 
-
-
-
 def prelimination(cs=None, cb=None, ps=None, pb=None):  
                      
     logging.info(f"pre elimination check")
@@ -845,11 +738,63 @@ def get_ps(cs, ps, ps_1, ps1, underlying):
 
     logging.info("get_ps returning True")
     return True
+def get_candidates_put(contracts):
+    logging.error("TBD")
+    sys.exit(1)
 
-def get_candidates(contracts):
+def get_candidates_call(contracts):
+    candidates = []
+    call_list = contracts["call"]
+     
+    underlying = contracts["underlying"]
+    total_count = 0
+    meet_requirements_count = 0
+    
+    for i in range(len(call_list) - 1):
+        cs = call_list[i]
+        logging.info(f"--------cs: {cs.desc}, delta: {cs.delta}")
+        if not check_delta_bound(cs.delta, option_type="cs"):
+            logging.info("BAD bound: call sell delta")
+            continue
+        last_strike = cs.strike
+        for j in range(i+1, len(call_list)):
+            cb = call_list[j]
+            logging.info(f"------cb: {cb.desc} delta: {cb.delta}")
+            if not check_delta_bound(cb.delta, option_type="cb", c_delta=cs.delta):
+                logging.info("BAD bound: call buy delta")
+                continue
+            this_strike = cb.strike
+            
+            if this_strike <= last_strike:
+                logging.DEBUG(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
+                sys.exit(1)
+            
+            candidate = Candidate(cs=cs, cb=cb, underlying=underlying)
+                       
+            if  True or candidate.meets_requirements():
+                    candidates.append(candidate)
+                    meet_requirements_count += 1
+
+    print ("----------------------")
+    print("total candidates:", total_count)
+    print("meet req candidates:", meet_requirements_count)                    
+    return candidates
+
+def get_candidates_put_and_call(contracts):
     candidates = []
     call_list = contracts["call"]
     put_list = contracts["put"]
+
+    if call_list and put_list:
+        logging.info(f"get_candidates - calls: {len(call_list)} puts: {len(put_list)}")
+    elif call_list:
+        logging.info(f"get_candidates - calls: {len(call_list)}") 
+    elif put_list:
+        logging.info(f"get_candidates - puts: {len(put_list)}")
+    else:
+        logging.error(f"get_candidates - unexpected contracts")
+        sys.exit(1)
+
     underlying = contracts["underlying"]
     total_count = 0
     meet_requirements_count = 0
@@ -917,7 +862,7 @@ def get_candidates(contracts):
         
 
 def print_usage():
-    print("usage: python get_options.py [--skip-delta] [--sort prop] [--reload] SYM")
+    print("usage: python get_options.py [--skip-delta] [--sort prop] [--calls|--puts] [--reload] SYM")
 
 
 #
@@ -930,7 +875,9 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
 symbols = []
 reload = False
 ARGS["skip_delta"] = False
+ARGS["option_type"] = "ALL"  # or CALLS_ONLY or PUTS_ONLY
 ARGS["sort_key"] = "et"
+
 
 # setup logging
 root = logging.getLogger()
@@ -957,6 +904,10 @@ for argn in range(1, len(sys.argv)):
             ARGS["skip_delta"] = True
         elif argval == "--reload":
             reload = True
+        elif argval == "--calls":
+            ARGS["option_type"] = "CALLS_ONLY"
+        elif argval == "--puts":
+            ARGS["option_type"] = "PUTS_ONLY"
         elif argval == "--sort":
             sort_key_arg = True       
         else:
@@ -969,6 +920,9 @@ if not symbols:
     sys.exit(1)
 symbol = symbols[0]
 print("getting symbol:", symbol)
+
+
+
 seconds_in_day = 24.0 * 60.0 * 60.0
 exp_target_min = time.time() + 41.0 * seconds_in_day
 dt_min = datetime.fromtimestamp(exp_target_min)
@@ -987,25 +941,47 @@ if not contracts:
         sys.exit(1)
     contracts = get_contracts(symbol, chains)
 
-for k in ("call", "put"):
+
+# contracts: {"underlying": underlying, "call": calls, "put": puts}
+
+if ARGS["option_type"] == "CALLS_ONLY":
+    option_types = ("call",)
+elif ARGS["option_type"] == "PUTS_ONLY":
+    option_types = ("put",)
+else:
+    option_types = ("call", "put")
+
+for k in option_types:
     options = contracts[k]
     print(k, len(options))
     for option in options:
         print(option.desc, option.delta)
 
-for k in ("call", "put"):
+for k in option_types:
     options = contracts[k]
     if len(options) == 0:
         print("no candidates!")
         sys.exit(0)
 
-candidates = get_candidates(contracts)
+if "call" not in option_types:
+    candidates = get_candidates_put(contracts)
+elif "put" not in option_types:
+    candidates = get_candidates_call(contracts)
+else:
+    candidates = get_candidates_put_and_call(contracts)
+ 
 print("got", len(candidates), "candidates")
 print("======================")
 
-
 for propname in SORT_KEYS:
     print("sorting by:", propname)
+    can_sort = True
+    for candidate in candidates:
+        if not candidate.has_prop(propname):
+            can_sort = False
+            break
+    if not can_sort:
+        continue
     if propname in NON_REVERSE_SORT:
         reverse = False
     else:
@@ -1015,7 +991,7 @@ for propname in SORT_KEYS:
     order = 1
     prev = None
     for candidate in candidates:
-        candidate.set_rank(propname, order, byorder=True)
+        candidate.set_order(propname, order)
         val = candidate.get_prop(propname)
         if prev:
             if abs(val - prev) > 0.001:
@@ -1028,8 +1004,7 @@ for propname in SORT_KEYS:
 print("======================")
 sort_key = ARGS["sort_key"]
 print(f"sorting by: [{sort_key}]")
-candidates.sort(key = lambda candidate: candidate.get_rank(sort_key,byorder=True))
-
+#candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
 
 printCandidates(candidates)
  
