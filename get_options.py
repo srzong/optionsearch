@@ -21,7 +21,7 @@ SELL_SYMMETRY = 1 #0.12
 TOTAL_SYMMETRY = 1 #0.25
 WIDTH_SYMMETRY = 1 #1, no use
 
-SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
+# SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
 
@@ -43,8 +43,9 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
     elif option_type == "ps":
         lbnd = PS_DELTA_RANGE[0]
         ubnd = PS_DELTA_RANGE[1]
-        if ubnd < -c_delta: 
-            ubnd = -c_delta
+        if c_delta:
+            if ubnd < -c_delta: 
+                ubnd = -c_delta
         """
         lbnd = -c_delta - SELL_
         if lbnd < PS_DELTA_RANGE[0]:
@@ -53,7 +54,11 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
         if not ubnd < PS_DELTA_RANGE[1]:
             ubnd = PS_DELTA_RANGE[1]
         """
-        logging.debug(f"ps: c_delta= {c_delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
+        if c_delta:
+            logging.debug(f"ps: c_delta= {c_delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
+        else:
+            logging.debug(f"ps: c_delta=None lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
+
     
     elif option_type == "pb":
         lbnd = PB_DELTA_RANGE[0]
@@ -171,7 +176,7 @@ class Candidate:
             ecch = 0.5 * tcc * delta_cch
             eclh = -0.5 * cl * delta_clh
             ecl = -cl * cb.delta
-            et = ecc + ecch + eclh + ecl
+            etc = ecc + ecch + eclh + ecl
             tcc_w = tcc / width
             logging.info(f"tcc: {tcc:.3f}")
             logging.info(f"w: {width:.3f}")
@@ -180,22 +185,44 @@ class Candidate:
             logging.info(f"delta_cc: {delta_cc:.3f}  delta_cch: {delta_cch:.3f}  delta_clh: {delta_clh:.3f}")
             logging.info(f"cl: {cl:.3f}")
             logging.info(f"ecc: {ecc:.3f}  ecch: {ecch:.3f}  eclh: {eclh:.3f}  ecl: {ecl:.3f}") 
-            logging.info(f"et: {et:.3f}")
+            logging.info(f"etc: {etc:.3f}")
             logging.info(f"tcc/w: {tcc_w:.3f}")
 
             self._props["tcc"] = tcc
             self._props["width"] = width
             self._props["tcc_w"] = tcc_w
-            self._props["et"] = et
+            self._props["etc"] = etc
             return
         elif ps and pb and not cs and not cb:
-            tcc = pb.price - ps.price
+            tpc = ps.price - pb.price
             width = ps.strike - pb.strike
             if width:
-                tcc_w = tcc / width
-                self._props["tcc"] = tcc
+                tpc_w = tpc / width
+                delta_pc = 1.0 - ps.delta
+                delta_pch = tpc * (pb.delta - ps.delta)
+                delta_plh = pb.delta - ps.delta - delta_pch
+                pl = width - tpc
+                epc = tpc * delta_pc
+                epch = 0.5 * tpc * delta_pch
+                eplh = -0.5 * pl * delta_plh
+                epl = -pl*pb.delta
+                etp = epc + epch + eplh + epl
+
+                logging.info(f"tpc: {tpc:.3f}")
+                logging.info(f"width: {width:.3f}")
+                logging.info(f"ps.strike: {ps.strike:.3f}  ps.price: {ps.price:.3f}  ps.delta: {ps.delta}")
+                logging.info(f"pb.strike: {pb.strike:.3f}  pb.price: {pb.price:.3f}  pb.delta: {pb.delta}")
+                logging.info(f"delta_pc: {delta_pc:.3f}  delta_pch: {delta_pch:.3f}  delta_plh: {delta_plh:.3f}")
+                logging.info(f"pl: {pl:.3f}")
+                logging.info(f"epc: {epc:.3f}  epch: {epch:.3f}  eplh: {eplh:.3f}  epl: {epl:.3f}") 
+                logging.info(f"etp: {etp:.3f}")
+                logging.info(f"tpc/w: {tpc_w:.3f}")
+
+
+                self._props["tpc"] = tpc
                 self._props["width"] = width
-                self._props["tcc_w"] = tcc_w
+                self._props["tpc_w"] = tpc_w
+                self._props["etp"] = etp
             return
         elif not cs or not cb or not ps or not pb:
             logging.warn("unexpected candidate constructor")
@@ -274,7 +301,7 @@ class Candidate:
             ecd = -cd * cbd 
             epd = pd * pbd 
             et = etc + ecch + ecdh + epch + epdh + ecd + epd
-            #winet = etc + ecch + epch
+            winet = etc + ecch + epch
             """
             logging.info(f"etc: {etc:.3f}")
             logging.info(f"ecch: {ecch:.3f}")
@@ -339,36 +366,30 @@ class Candidate:
         if self._pb:
             print("pb:", self._pb)
         print("----")
-        
-        if "et" in self._props:
-            if self._cs and self._cb and not self._ps and not self._pb:
-                propnames = ("et", "tcc", "width", "tcc_w")
-            elif self._ps and self._pb and not self._cs and not self._cb:
-                propnames = ()  # TBD
-            else:
-                propnames = ("et", "tc", "width", "ml", "tc_width", "et_width", "et_tc", "symm", "winet")
 
-            
-            for propname in propnames:
-                propval = self.get_prop(propname)
-                proprank = self.get_rank(propname)
+        propnames = list(self.get_props())
+        propnames.sort()
 
-                s = f"{propname}: {propval:.3f}"
-                if proprank:
-                    s += f" rank: {proprank}"
-                if total:
-                    s += f"/{total}"
-                if min_vals and max_vals:
-                    min_val = min_vals[propname]
-                    max_val = max_vals[propname]
-                    percent = int((propval - min_val) * 100.0 / (max_val - min_val))
-                    s += f" [{min_val:.3f}-{max_val:.3f}] {percent}%"
-                if "sort_key" in ARGS and ARGS["sort_key"] == propname:
-                    s += " *"
-                print(s)
-            if self._cs and self._ps:
-                ssymm = self._cs.delta + self._ps.delta
-                print(f"sell symm: {ssymm:.3f} ")
+        for propname in propnames:
+            propval = self.get_prop(propname)
+            proprank = self.get_rank(propname)
+
+            s = f"{propname}: {propval:.3f}"
+            if proprank:
+                s += f" rank: {proprank}"
+            if total:
+                s += f"/{total}"
+            if min_vals and max_vals:
+                min_val = min_vals[propname]
+                max_val = max_vals[propname]
+                percent = int((propval - min_val) * 100.0 / (max_val - min_val))
+                s += f" [{min_val:.3f}-{max_val:.3f}] {percent}%"
+            if "sort_key" in ARGS and ARGS["sort_key"] == propname:
+                s += " *"
+            print(s)
+        if self._cs and self._ps:
+            ssymm = self._cs.delta + self._ps.delta
+            print(f"sell symm: {ssymm:.3f} ")
  
     @property
     def cs(self):
@@ -485,11 +506,14 @@ class Candidate:
 
 def printCandidates(candidates):
     total = len(candidates)
-    propnames = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
-
+    # propnames = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
+    propnames = set()
     min_vals = {}
     max_vals = {}
     for candidate in candidates:
+        if not propnames:
+            for name in candidate.get_props():
+                propnames.add(name)
         for propname in propnames:
             if not candidate.has_prop(propname):
                 continue
@@ -739,10 +763,51 @@ def get_ps(cs, ps, ps_1, ps1, underlying):
     logging.info("get_ps returning True")
     return True
 def get_candidates_put(contracts):
-    logging.error("TBD")
-    sys.exit(1)
+    # set default sort key
+    if "sort_key" not in ARGS:
+        ARGS["sort_key"] = "etp"
+    candidates = []
+    put_list = contracts["put"]
+     
+    underlying = contracts["underlying"]
+    total_count = 0
+    meet_requirements_count = 0
+    
+    for i in range(len(put_list) - 1):
+        ps = put_list[i]
+        logging.info(f"--------ps: {ps.desc}, delta: {ps.delta}")
+        if not check_delta_bound(ps.delta, option_type="ps"):
+            logging.info("BAD bound: put sell delta")
+            continue
+        last_strike = ps.strike
+        for j in range(i+1, len(put_list)):
+            pb = put_list[j]
+            logging.info(f"------pb: {pb.desc} delta: {pb.delta}")
+            if not check_delta_bound(pb.delta, option_type="pb", c_delta=pb.delta):
+                logging.info("BAD bound: put buy delta")
+                continue
+            this_strike = pb.strike
+            
+            if this_strike <= last_strike:
+                logging.DEBUG(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
+                sys.exit(1)
+            
+            candidate = Candidate(ps=ps, pb=pb, underlying=underlying)
+                       
+            if  True or candidate.meets_requirements():
+                    candidates.append(candidate)
+                    meet_requirements_count += 1
+
+    print ("----------------------")
+    print("total candidates:", total_count)
+    print("meet req candidates:", meet_requirements_count)                    
+    return candidates
+
 
 def get_candidates_call(contracts):
+    # set default sort key
+    if "sort_key" not in ARGS:
+        ARGS["sort_key"] = "etc"
     candidates = []
     call_list = contracts["call"]
      
@@ -781,6 +846,8 @@ def get_candidates_call(contracts):
     return candidates
 
 def get_candidates_put_and_call(contracts):
+    if "sort_key" not in ARGS:
+        ARGS["sort_key"] = "et"
     candidates = []
     call_list = contracts["call"]
     put_list = contracts["put"]
@@ -876,8 +943,6 @@ symbols = []
 reload = False
 ARGS["skip_delta"] = False
 ARGS["option_type"] = "ALL"  # or CALLS_ONLY or PUTS_ONLY
-ARGS["sort_key"] = "et"
-
 
 # setup logging
 root = logging.getLogger()
@@ -893,11 +958,7 @@ sort_key_arg = False
 for argn in range(1, len(sys.argv)):
     argval = sys.argv[argn]
     if sort_key_arg:
-        if argval not in SORT_KEYS:
-            print("sort key must be one of:", SORT_KEYS)
-            sys.exit(1)
         ARGS["sort_key"] = argval
-        
         sort_key_arg = False
     elif argval.startswith('-'):
         if argval == "--skip-delta":
@@ -973,8 +1034,14 @@ else:
 print("got", len(candidates), "candidates")
 print("======================")
 
-for propname in SORT_KEYS:
-    print("sorting by:", propname)
+propnames = set()
+for candidate in candidates:
+    for propname in candidate.get_props():
+        propnames.add(propname)
+
+logging.info(f"properties: {propnames}")
+
+for propname in propnames:
     can_sort = True
     for candidate in candidates:
         if not candidate.has_prop(propname):
@@ -1004,7 +1071,7 @@ for propname in SORT_KEYS:
 print("======================")
 sort_key = ARGS["sort_key"]
 print(f"sorting by: [{sort_key}]")
-#candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
+candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
 
 printCandidates(candidates)
  
