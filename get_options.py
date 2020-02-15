@@ -198,14 +198,14 @@ class Candidate:
             width = ps.strike - pb.strike
             if width:
                 tpc_w = tpc / width
-                delta_pc = 1.0 - ps.delta
-                delta_pch = tpc * (pb.delta - ps.delta)
+                delta_pc = 1.0 + ps.delta
+                delta_pch = tpc * (pb.delta - ps.delta) / width
                 delta_plh = pb.delta - ps.delta - delta_pch
                 pl = width - tpc
                 epc = tpc * delta_pc
                 epch = 0.5 * tpc * delta_pch
                 eplh = -0.5 * pl * delta_plh
-                epl = -pl*pb.delta
+                epl = pl * pb.delta
                 etp = epc + epch + eplh + epl
 
                 logging.info(f"tpc: {tpc:.3f}")
@@ -279,7 +279,7 @@ class Candidate:
         logging.info(f"pss - pbs: {(pss - pbs):.3f}")
       
         try:
-            etc = tc * (1.0 - csd + psd) 
+            etca = tc * (1.0 - csd + psd) 
             delta_cc = tc * (csd - cbd)/(cbs - css)
             delta_pc = tc * (psd - pbd)/(pss - pbs) 
             delta_cd = csd - cbd - delta_cc
@@ -300,10 +300,10 @@ class Candidate:
             epdh = 0.5 * pd * delta_pd 
             ecd = -cd * cbd 
             epd = pd * pbd 
-            et = etc + ecch + ecdh + epch + epdh + ecd + epd
-            winet = etc + ecch + epch
+            et = etca + ecch + ecdh + epch + epdh + ecd + epd
+            winet = etca + ecch + epch
             """
-            logging.info(f"etc: {etc:.3f}")
+            logging.info(f"etca: {etc:.3f}")
             logging.info(f"ecch: {ecch:.3f}")
             logging.info(f"epch: {epch:.3f}")
             logging.info(f"ecdh: {ecdh:.3f}")
@@ -768,25 +768,27 @@ def get_candidates_put(contracts):
         ARGS["sort_key"] = "etp"
     candidates = []
     put_list = contracts["put"]
+    for option in put_list:
+        print(f"put_list.strike: {option.strike:.3f}")
      
     underlying = contracts["underlying"]
     total_count = 0
     meet_requirements_count = 0
     
     for i in range(len(put_list) - 1):
-        ps = put_list[i]
-        logging.info(f"--------ps: {ps.desc}, delta: {ps.delta}")
-        if not check_delta_bound(ps.delta, option_type="ps"):
-            logging.info("BAD bound: put sell delta")
+        pb = put_list[i]
+        logging.info(f"--------pb: {pb.desc}, delta: {pb.delta}")
+        if not check_delta_bound(pb.delta, option_type="pb"):
+            logging.info("BAD bound: put buy delta")
             continue
-        last_strike = ps.strike
+        last_strike = pb.strike
         for j in range(i+1, len(put_list)):
-            pb = put_list[j]
-            logging.info(f"------pb: {pb.desc} delta: {pb.delta}")
-            if not check_delta_bound(pb.delta, option_type="pb", c_delta=pb.delta):
-                logging.info("BAD bound: put buy delta")
+            ps = put_list[j]
+            logging.info(f"------ps: {ps.desc} delta: {ps.delta}")
+            if not check_delta_bound(ps.delta, option_type="ps", c_delta=ps.delta):
+                logging.info("BAD bound: put sell delta")
                 continue
-            this_strike = pb.strike
+            this_strike = ps.strike
             
             if this_strike <= last_strike:
                 logging.DEBUG(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
