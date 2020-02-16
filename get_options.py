@@ -25,7 +25,7 @@ WIDTH_SYMMETRY = 1 #1, no use
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
 
-loglevel = logging.DEBUG  # DEBUG or INFO or ERROR
+loglevel = logging.INFO # DEBUG or INFO or ERROR
 
 
 def check_delta_bound(delta, option_type=None, c_delta=None):
@@ -284,8 +284,8 @@ class Candidate:
             delta_pc = tc * (psd - pbd)/(pss - pbs) 
             delta_cd = csd - cbd - delta_cc
             delta_pd = psd - pbd - delta_pc 
-            cd = cbs - css - tc
-            pd = pss - pbs - tc
+            tcl = cbs - css - tc
+            tpl = pss - pbs - tc
             """
             logging.info(f"d_cc: {delta_cc:.3f}")
             logging.info(f"d_pc:  {delta_pc:.3f}")   
@@ -294,34 +294,34 @@ class Candidate:
             logging.info(f"cd:  {cd:.3f}")            
             logging.info(f"pd: {pd:.3f}")
             """
-            ecch = 0.5 * tc * delta_cc
-            epch = -0.5 * tc * delta_pc
-            ecdh = -0.5 * cd * delta_cd 
-            epdh = 0.5 * pd * delta_pd 
-            ecd = -cd * cbd 
-            epd = pd * pbd 
-            et = etca + ecch + ecdh + epch + epdh + ecd + epd
-            winet = etca + ecch + epch
+            etcch = 0.5 * tc * delta_cc
+            etpch = -0.5 * tc * delta_pc
+            etcdh = -0.5 * tcl * delta_cd 
+            etpdh = 0.5 * tpl * delta_pd 
+            etcd = -tcl * cbd 
+            etpd = tpl * pbd 
+            et = etca + etcch + etcdh + etpch + etpdh + etcd + etpd
+            winet = etca + etcch + etpch
             """
             logging.info(f"etca: {etc:.3f}")
-            logging.info(f"ecch: {ecch:.3f}")
-            logging.info(f"epch: {epch:.3f}")
-            logging.info(f"ecdh: {ecdh:.3f}")
-            logging.info(f"epdh: {epdh:.3f}")
-            logging.info(f"ecd: {ecd:.3f}")
-            logging.info(f"epd: {epd:.3f}")
+            logging.info(f"ecch: {etcch:.3f}")
+            logging.info(f"epch: {etpch:.3f}")
+            logging.info(f"ecdh: {etcdh:.3f}")
+            logging.info(f"epdh: {etpdh:.3f}")
+            logging.info(f"ecd: {etcd:.3f}")
+            logging.info(f"epd: {etpd:.3f}")
             
             logging.info(f"et: {et:.3f}")
             logging.info(f"winet: {winet:.3f}")    
-"""
+            """
             tc_width = tc / width
             et_width = et/width
             et_tc = et/tc
 
-            if cd > pd:
-                ml = cd
+            if tcl > tpl:
+                ml = tcl
             else:
-                ml = pd
+                ml = tpl
 
             et_ml = et/ml
             tc_ml = tc/ml
@@ -382,7 +382,10 @@ class Candidate:
             if min_vals and max_vals:
                 min_val = min_vals[propname]
                 max_val = max_vals[propname]
-                percent = int((propval - min_val) * 100.0 / (max_val - min_val))
+                if max_val > min_val:
+                    percent = int((propval - min_val) * 100.0 / (max_val - min_val))
+                else:
+                    percent = 0
                 s += f" [{min_val:.3f}-{max_val:.3f}] {percent}%"
             if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                 s += " *"
@@ -481,11 +484,11 @@ class Candidate:
             return False
 
         if self._ps.strike - self._pb.strike <= tc:
-            logging.info("BAD tail: put")
+            logging.info(f"BAD tail: put < tc {tc}")
             return False   
 
         if self._cb.strike - self._cs.strike <= tc:
-            logging.info("BAD tail: call")
+            logging.info(f"BAD tail: call < tc {tc}")
             return False  
 
         if et <= ET_BOUND:
@@ -588,14 +591,7 @@ def get_options(option_map, underlying):
                     sys.exit(1)
                 price = (option["bid"] + option["ask"])/2.0
                 item = Option(desc=description, delta=delta, strike=strike, price=price)
-                """
-                if  delta >= PSS_RANGE[0] and delta <= PSS_RANGE[1]:
-                    pss_options.append(item)
-                elif delta >= PBS_RANGE[0] and delta <= PBS_RANGE[1]:
-                    pbs_options.append(item)
-                else:
-                    print(f"skip put option: {description} delta: {delta}")
-                """
+
                 results.append(item)
     
     # remove the :nn from expire date 
@@ -642,6 +638,8 @@ def load_from_file(symbol, dt_min, dt_max):
     logging.info(f"load_file_file({symbol}, {dt_min}, {dt_max})")
     filenames = os.listdir("data")
     datafile = None
+    logging.info(f"search data files with symbol {symbol} from {dt_min} to {dt_max}")
+
     for filename in filenames:
         if not filename.endswith(".txt"):
             continue
@@ -651,9 +649,9 @@ def load_from_file(symbol, dt_min, dt_max):
         datestring = filename[(n+1):]
         if file_symbol != symbol:
             continue
-         
+        logging.info(f"looking at file: {filename}")
         file_date = datetime.fromisoformat(datestring)
-        if file_date > dt_min and file_date < dt_max:
+        if file_date >= dt_min and file_date <= dt_max:
             datafile = filename
             break
     if not datafile:
@@ -988,9 +986,12 @@ print("getting symbol:", symbol)
 
 seconds_in_day = 24.0 * 60.0 * 60.0
 exp_target_min = time.time() + 41.0 * seconds_in_day
-dt_min = datetime.fromtimestamp(exp_target_min)
+dt = datetime.fromtimestamp(exp_target_min)
+# get time as of midnight
+dt_min = datetime(year=dt.year, month=dt.month, day=dt.day)
 exp_target_max = time.time() + 60.0 * seconds_in_day
-dt_max = datetime.fromtimestamp(exp_target_max)
+dt = datetime.fromtimestamp(exp_target_max)
+dt_max = datetime(year=dt.year, month=dt.month, day=dt.day)
     
 contracts = None
 if not reload:
