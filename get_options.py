@@ -171,6 +171,7 @@ class Candidate:
             delta_cc = 1.0 - cs.delta
             delta_cch = tcc * (cs.delta - cb.delta)/width
             delta_clh = cs.delta - cb.delta - delta_cch
+            bevenc = (delta_cc + delta_cch) * 100
             cl = width - tcc
             ecc = tcc * delta_cc
             ecch = 0.5 * tcc * delta_cch
@@ -187,20 +188,23 @@ class Candidate:
             logging.info(f"ecc: {ecc:.3f}  ecch: {ecch:.3f}  eclh: {eclh:.3f}  ecl: {ecl:.3f}") 
             logging.info(f"etc: {etc:.3f}")
             logging.info(f"tcc/w: {tcc_w:.3f}")
+            logging.info(f"bevenc: {bevenc:.2f}%")
 
             self._props["tcc"] = tcc
             self._props["width"] = width
             self._props["tcc_w"] = tcc_w
             self._props["etc"] = etc
+            self._props["bevenc"] = bevenc
             return
         elif ps and pb and not cs and not cb:
             tpc = ps.price - pb.price
             width = ps.strike - pb.strike
             if width:
                 tpc_w = tpc / width
-                delta_pc = 1.0 + ps.delta
-                delta_pch = tpc * (pb.delta - ps.delta) / width
-                delta_plh = pb.delta - ps.delta - delta_pch
+                delta_pc = 1.0 + ps.delta   #+
+                delta_pch = tpc * (pb.delta - ps.delta) / width #+
+                delta_plh = pb.delta - ps.delta - delta_pch #+
+                bevenp = (delta_pc + delta_pch) * 100 
                 pl = width - tpc
                 epc = tpc * delta_pc
                 epch = 0.5 * tpc * delta_pch
@@ -217,12 +221,13 @@ class Candidate:
                 logging.info(f"epc: {epc:.3f}  epch: {epch:.3f}  eplh: {eplh:.3f}  epl: {epl:.3f}") 
                 logging.info(f"etp: {etp:.3f}")
                 logging.info(f"tpc/w: {tpc_w:.3f}")
-
+                logging.info(f"bevenp: {bevenp:.2f}%")
 
                 self._props["tpc"] = tpc
                 self._props["width"] = width
                 self._props["tpc_w"] = tpc_w
                 self._props["etp"] = etp
+                self._props["bevenp"] = bevenp
             return
         elif not cs or not cb or not ps or not pb:
             logging.warn("unexpected candidate constructor")
@@ -281,19 +286,21 @@ class Candidate:
         try:
             etca = tc * (1.0 - csd + psd) 
             delta_cc = tc * (csd - cbd)/(cbs - css)
-            delta_pc = tc * (psd - pbd)/(pss - pbs) 
+            delta_pc = tc * (psd - pbd)/(pss - pbs) #-
             delta_cd = csd - cbd - delta_cc
-            delta_pd = psd - pbd - delta_pc 
+            delta_pd = psd - pbd - delta_pc #-
             tcl = cbs - css - tc
             tpl = pss - pbs - tc
-            """
+            beven = (1.0 - csd + psd + delta_cc - delta_pc) * 100
+            
             logging.info(f"d_cc: {delta_cc:.3f}")
             logging.info(f"d_pc:  {delta_pc:.3f}")   
             logging.info(f"d_cd: {delta_cd:.3f}")
             logging.info(f"d_pd: {delta_pd:.3f}")            
-            logging.info(f"cd:  {cd:.3f}")            
-            logging.info(f"pd: {pd:.3f}")
-            """
+            logging.info(f"tcl:  {tcl:.3f}")            
+            logging.info(f"tpl: {tpl:.3f}")
+            logging.info(f"beven: {beven:.2f}%")
+            
             etcch = 0.5 * tc * delta_cc
             etpch = -0.5 * tc * delta_pc
             etcdh = -0.5 * tcl * delta_cd 
@@ -302,6 +309,7 @@ class Candidate:
             etpd = tpl * pbd 
             et = etca + etcch + etcdh + etpch + etpdh + etcd + etpd
             winet = etca + etcch + etpch
+            
             """
             logging.info(f"etca: {etc:.3f}")
             logging.info(f"ecch: {etcch:.3f}")
@@ -346,6 +354,7 @@ class Candidate:
             self._props["tc_ml"] = tc_ml
             self._props["symm"] = abs(symm)
             self._props["winet"] = winet
+            self._props["beven"] = beven
         except ZeroDivisionError:
             logging.info("zerodivisionerror")
               
@@ -386,7 +395,7 @@ class Candidate:
                     percent = int((propval - min_val) * 100.0 / (max_val - min_val))
                 else:
                     percent = 0
-                s += f" [{min_val:.3f}-{max_val:.3f}] {percent}%"
+                s += f" [{min_val:.3f}, {max_val:.3f}] {percent}%"
             if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                 s += " *"
             print(s)
@@ -505,8 +514,6 @@ class Candidate:
         return True
 
         
- 
-
 def printCandidates(candidates):
     total = len(candidates)
     # propnames = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
@@ -694,27 +701,41 @@ def load_from_file(symbol, dt_min, dt_max):
 def prelimination(cs=None, cb=None, ps=None, pb=None):  
                      
     logging.info(f"pre elimination check")
-    logging.info(f"pree IC: {cs.strike:.1f}/{cb.strike:.1f}/{ps.strike:.1f}/{pb.strike:.1f}" )
+    fmt = f"Checking:"
+    if cs:
+        fmt += f" {cs.strike:.1f}"
+    if cb:
+        fmt += f"/{cb.strike:.1f}"
+    if ps:
+        fmt += f"/{ps.strike:.1f}"
+    if pb:
+        fmt += f"/{pb.strike:.1f}"
+    logging.info(fmt)
 
-    if cs.strike >= cb.strike:
-        logging.info("BAD call strike: sell>buy")
+    if cs and cs.strike >= cb.strike:
+        logging.info("BAD call strike: sell > buy")
         return False
 
-    if pb.strike >= ps.strike:
-        logging.info("BAD put strike: buy>sell")
+    if pb and pb.strike >= ps.strike:
+        logging.info("BAD put strike: buy > sell")
         return False
     
-    if ps.strike >= cs.strike:
-        logging.info("BAD call/put strikes")
+    if ps and cs and ps.strike >= cs.strike:
+        logging.info("BAD call/put strikes: put > call")
         return False
 
-    if not ps.price >= pb.price:
-        logging.info('BAD price: put sell < buy')
+    if cs and cb and cs.price <= cb.price:
+        logging.info("BAD call price: sell < buy")
         return False
 
-    if not cs.price >= cb.price:
-        logging.info("BAD price: call sell < buy")
+    if ps and pb and ps.price <= pb.price:
+        logging.info('BAD put price: sell < buy')
         return False
+
+    return True
+
+def ic_symmetry_check(cs=None, cb=None, ps=None, pb=None):
+    logging.info(f"IC symmetry check: {cs.strike:.1f}/{cb.strike:.1f}/{ps.strike:.1f}/{pb.strike:.1f}" )
     
     if cb.strike - cs.strike > WIDTH_SYMMETRY * (ps.strike - pb.strike):
         logging.info(f"BAD width ratio call:put {cb.strike - cs.strike} : {ps.strike - pb.strike}")
@@ -735,7 +756,7 @@ def prelimination(cs=None, cb=None, ps=None, pb=None):
         logging.info(f"BAD symmetry: over all symm = {ssymm:.3f} < {TOTAL_SYMMETRY}")
         return False
 
-    return True
+    return True       
 
 def get_ps(cs, ps, ps_1, ps1, underlying):
     logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
@@ -755,11 +776,12 @@ def get_ps(cs, ps, ps_1, ps1, underlying):
         return True
 
     if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
-        logging.info("BAD bound: put sell delta")
+        logging.info("BAD delta range: put sell delta")
         return False
 
     logging.info("get_ps returning True")
     return True
+
 def get_candidates_put(contracts):
     # set default sort key
     if "sort_key" not in ARGS:
@@ -775,28 +797,30 @@ def get_candidates_put(contracts):
     
     for i in range(len(put_list) - 1):
         pb = put_list[i]
-        logging.info(f"--------pb: {pb.desc}, delta: {pb.delta}")
+        logging.info(f"--------pb: {pb.desc}, strike:{pb.strike}, price:{pb.price}, delta:{pb.delta}")
         if not check_delta_bound(pb.delta, option_type="pb"):
-            logging.info("BAD bound: put buy delta")
+            logging.info("BAD delta range: put buy delta")
             continue
         last_strike = pb.strike
         for j in range(i+1, len(put_list)):
             ps = put_list[j]
-            logging.info(f"------ps: {ps.desc} delta: {ps.delta}")
+            logging.info(f"------ps: {ps.desc} strike:{ps.strike}, price:{ps.price}, delta:{ps.delta}")
             if not check_delta_bound(ps.delta, option_type="ps", c_delta=ps.delta):
-                logging.info("BAD bound: put sell delta")
+                logging.info("BAD delta range: put sell delta")
                 continue
             this_strike = ps.strike
             
             if this_strike <= last_strike:
                 logging.DEBUG(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
                 sys.exit(1)
-            
-            candidate = Candidate(ps=ps, pb=pb, underlying=underlying)
+
+            if prelimination(ps=ps, pb=pb):
+                total_count += 1
+                candidate = Candidate(ps=ps, pb=pb, underlying=underlying)
                        
-            if  True or candidate.meets_requirements():
+                if  True or candidate.meets_requirements():
                     candidates.append(candidate)
-                    meet_requirements_count += 1
+                    meet_requirements_count += 1        
 
     print ("----------------------")
     print("total candidates:", total_count)
@@ -817,26 +841,28 @@ def get_candidates_call(contracts):
     
     for i in range(len(call_list) - 1):
         cs = call_list[i]
-        logging.info(f"--------cs: {cs.desc}, delta: {cs.delta}")
+        logging.info(f"--------cs: {cs.desc} strike:{cs.strike}, price:{cs.price}, delta:{cs.delta}")
         if not check_delta_bound(cs.delta, option_type="cs"):
-            logging.info("BAD bound: call sell delta")
+            logging.info("BAD delta range: call sell delta")
             continue
         last_strike = cs.strike
         for j in range(i+1, len(call_list)):
             cb = call_list[j]
-            logging.info(f"------cb: {cb.desc} delta: {cb.delta}")
+            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, price:{cb.price}, delta:{cb.delta}")
             if not check_delta_bound(cb.delta, option_type="cb", c_delta=cs.delta):
-                logging.info("BAD bound: call buy delta")
+                logging.info("BAD delta range: call buy delta")
                 continue
             this_strike = cb.strike
             
             if this_strike <= last_strike:
                 logging.DEBUG(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
                 sys.exit(1)
-            
-            candidate = Candidate(cs=cs, cb=cb, underlying=underlying)
+
+            if prelimination(cs=cs, cb=cb):
+                total_count += 1
+                candidate = Candidate(cs=cs, cb=cb, underlying=underlying)
                        
-            if  True or candidate.meets_requirements():
+                if  True or candidate.meets_requirements():
                     candidates.append(candidate)
                     meet_requirements_count += 1
 
@@ -868,16 +894,18 @@ def get_candidates_put_and_call(contracts):
     
     for i in range(len(call_list) - 1):
         cs = call_list[i]
-        logging.info(f"--------cs: {cs.desc}, delta: {cs.delta}")
+        logging.info(f"--------cs: {cs.desc}, strike:{cs.strike}, price:{cs.price}, delta:{cs.delta}")
         if not check_delta_bound(cs.delta, option_type="cs"):
-            logging.info("BAD bound: call sell delta")
+            logging.info("BAD delta range: call sell delta")
             continue
         last_strike = cs.strike
         for j in range(i+1, len(call_list)):
             cb = call_list[j]
-            logging.info(f"------cb: {cb.desc} delta: {cb.delta}")
+            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, price:{cb.price}, delta:{cb.delta}")
             if not check_delta_bound(cb.delta, option_type="cb", c_delta=cs.delta):
-                logging.info("BAD bound: call buy delta")
+                logging.info("BAD delta range: call buy delta")
+                continue
+            if not prelimination(cs=cs, cb=cb):
                 continue
             this_strike = cb.strike
             
@@ -892,8 +920,9 @@ def get_candidates_put_and_call(contracts):
                 if not get_ps(cs, ps, put_list[k-1], put_list[k+1], underlying):
                     logging.info(f"BAD ps: {ps.desc}")
                     continue
+                
+                logging.info(f"----ps: {ps.desc} strike:{ps.strike}, price:{ps.price}, delta:{ps.delta}")
                 """
-                logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
                 logging.info(f"ps strike: {ps.strike} ps+1.strike: { put_list[k+1].strike}")
                 logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
 
@@ -905,7 +934,10 @@ def get_candidates_put_and_call(contracts):
                 last_strike = ps.strike
                 for l in range(0, k):
                     pb = put_list[l]
-                    logging.info(f"--pb: {pb.desc} delta: {pb.delta} ps.strike: {ps.strike}")
+                                    
+                    logging.info(f"----ps: {ps.desc} strike:{ps.strike}, price:{ps.price}, delta:{ps.delta}")
+
+                    logging.info(f"--pb: {pb.desc} strike:{pb.strike}, price:{pb.price}, delta:{pb.delta}")
                     if not check_delta_bound(pb.delta, option_type="pb", c_delta=ps.delta):
                         logging.info("BAD bound: put buy delta")
                         continue
@@ -915,7 +947,7 @@ def get_candidates_put_and_call(contracts):
                         sys.exit(1)
 
                     logging.info(f"pre IC: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
-                    if True or prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
+                    if prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
                         candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
                         total_count += 1
                         if  candidate.meets_requirements():
