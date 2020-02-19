@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import os
 
 def get_options(symbol, option=None, outdir=None):
@@ -6,6 +7,11 @@ def get_options(symbol, option=None, outdir=None):
     if option:
         args.append(option)
     args.append(symbol)
+
+    if not outdir:
+        outdir = "out"
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
     
     fout = open("tmp.txt", "w")
     result = subprocess.run(args, stdout=fout)
@@ -16,22 +22,44 @@ def get_options(symbol, option=None, outdir=None):
         os.rename("tmp.txt", f"{outdir}/{symbol}.txt")
     return result.returncode
 
+#
+# main
+#
+if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+    print("usage: python get_all.py [stocklist_file] [out_dir]")
+    sys.exit(0)
+
+stocklist_file = "stocks.csv"
+folder = "out"
+if len(sys.argv) > 1:
+    stocklist_file = sys.argv[1]
+
+if len(sys.argv) > 2:
+    folder = sys.argv[2]
+
+if not os.path.isdir(folder):
+    os.mkdir(folder)
+
 symbols = []
-with open("stock8000.csv", "r") as f:
+with open(stocklist_file, "r") as f:
     line = f.readline()
     while line:
         fields = line.strip().split(',')
-        if len(fields) == 9:
-            symbol = fields[0]
-            if not symbol.isupper():
-                print(f"ignoring symbol: {symbol}")
-                line = f.readline()
-                continue
-            print(symbol)
-            rc = get_options(symbol, option="--calls", outdir="calls")
-            if rc == 0:
-                symbols.append(symbol)     
-            rc = get_options(symbol, option="--puts", outdir="puts") 
+        if not fields:
+            line = f.readline()
+            continue
+        symbol = fields[0]
+        if not symbol.isupper():
+            print(f"ignoring symbol: {symbol}")
+            line = f.readline()
+            continue
+        print(symbol)
+        outdir = folder + "/calls"
+        rc = get_options(symbol, option="--calls", outdir=outdir)
+        if rc == 0:
+            symbols.append(symbol)     
+        outdir = folder + "/puts"
+        rc = get_options(symbol, option="--puts", outdir=outdir) 
         #print(f"{cnt}: {len(fields)}")
         line = f.readline()
 

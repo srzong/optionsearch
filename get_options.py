@@ -12,23 +12,23 @@ CB_DELTA_RANGE = (0.01, 0.30)
 PS_DELTA_RANGE = (-0.32, -0.165)
 PB_DELTA_RANGE = (-0.30, -0.01)
 
-WINET_BOUND = 0.1
-ET_BOUND = 0.0
-ET_WIDTH_BOUND = 0
-TC_WIDTH_BOUND = 0
+MIN_ET = 0
+MIN_TC = 0
+MIN_TC_WIDTH = 0
 
 SELL_SYMMETRY = 1 #0.12
 TOTAL_SYMMETRY = 1 #0.25
-WIDTH_SYMMETRY = 1 #1, no use
+WIDTH_SYMMETRY = 10 #10, no use
 
 # SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
+PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_width", "tpc_w", "tcc_w", "beven", "bevenp", "bevenc"]
 
-loglevel = logging.INFO # DEBUG or INFO or ERROR
+loglevel = logging.DEBUG # DEBUG or INFO or ERROR
 
 
-def check_delta_bound(delta, option_type=None, c_delta=None):
+def check_delta_range(delta, option_type=None, c_delta=None):
     if ARGS["skip_delta"]:
         return True
     if option_type == "cs":
@@ -46,15 +46,6 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
         if c_delta:
             if ubnd < -c_delta: 
                 ubnd = -c_delta
-        """
-        lbnd = -c_delta - SELL_
-        if lbnd < PS_DELTA_RANGE[0]:
-            lbnd = PS_DELTA_RANGE[0]
-        ubnd = -c_delta + SELL_
-        if not ubnd < PS_DELTA_RANGE[1]:
-            ubnd = PS_DELTA_RANGE[1]
-        """
-        if c_delta:
             logging.debug(f"ps: c_delta= {c_delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
         else:
             logging.debug(f"ps: c_delta=None lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
@@ -70,7 +61,7 @@ def check_delta_bound(delta, option_type=None, c_delta=None):
         logging.error("invalid call type")
         sys.exit(1)
     
-    logging.debug(f"check_delta: delta= {delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
+    logging.debug(f"check_delta_range: delta= {delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
     """
     if ubnd < lbnd:
         logging.warning("expected delta check upper bound to be greater than lower bound")
@@ -179,10 +170,16 @@ class Candidate:
             ecl = -cl * cb.delta
             etc = ecc + ecch + eclh + ecl
             tcc_w = tcc / width
+
+            logging.info("******************")
+            logging.info(f"CALL Spread: {cs.strike}/{cb.strike}" )
+            logging.info(f"strike: {cs.strike:8.1f}  {cb.strike:8.1f}" )
+            logging.info(f"delta:  {cs.delta:8.3f}  {cb.delta:8.3f}" )
+            logging.info(f"price:  {cs.price:8.3f}  {cb.price:8.3f}" )
+            logging.info("******************")
+
             logging.info(f"tcc: {tcc:.3f}")
             logging.info(f"w: {width:.3f}")
-            logging.info(f"cs.strike: {cs.strike:.3f}  cs.price: {cs.price:.3f}  cs.delta: {cs.delta}")
-            logging.info(f"cb.strike: {cb.strike:.3f}  cb.price: {cb.price:.3f}  cb.delta: {cb.delta}")
             logging.info(f"delta_cc: {delta_cc:.3f}  delta_cch: {delta_cch:.3f}  delta_clh: {delta_clh:.3f}")
             logging.info(f"cl: {cl:.3f}")
             logging.info(f"ecc: {ecc:.3f}  ecch: {ecch:.3f}  eclh: {eclh:.3f}  ecl: {ecl:.3f}") 
@@ -212,10 +209,15 @@ class Candidate:
                 epl = pl * pb.delta
                 etp = epc + epch + eplh + epl
 
+                logging.info("******************")
+                logging.info(f"PUT Spread: {ps.strike}/{pb.strike}" )
+                logging.info(f"strike: {ps.strike:8.1f}  {pb.strike:8.1f}" )
+                logging.info(f"delta:  {ps.delta:8.3f}  {pb.delta:8.3f}" )
+                logging.info(f"price:  {ps.price:8.3f}  {pb.price:8.3f}" )
+                logging.info("******************")
+
                 logging.info(f"tpc: {tpc:.3f}")
                 logging.info(f"width: {width:.3f}")
-                logging.info(f"ps.strike: {ps.strike:.3f}  ps.price: {ps.price:.3f}  ps.delta: {ps.delta}")
-                logging.info(f"pb.strike: {pb.strike:.3f}  pb.price: {pb.price:.3f}  pb.delta: {pb.delta}")
                 logging.info(f"delta_pc: {delta_pc:.3f}  delta_pch: {delta_pch:.3f}  delta_plh: {delta_plh:.3f}")
                 logging.info(f"pl: {pl:.3f}")
                 logging.info(f"epc: {epc:.3f}  epch: {epch:.3f}  eplh: {eplh:.3f}  epl: {epl:.3f}") 
@@ -230,7 +232,7 @@ class Candidate:
                 self._props["bevenp"] = bevenp
             return
         elif not cs or not cb or not ps or not pb:
-            logging.warn("unexpected candidate constructor")
+            logging.warning("unexpected candidate constructor")
             return
         
         # calculations based on cs, cb, ps, and pb being set
@@ -254,22 +256,7 @@ class Candidate:
         logging.info(f"strike: {css:8.1f}  {cbs:8.1f}  {pss:8.1f}  {pbs:8.1f}" )
         logging.info(f"delta:  {csd:8.3f}  {cbd:8.3f}  {psd:8.3f}  {pbd:8.3f}" )
         logging.info(f"price:  {csp:8.3f}  {cbp:8.3f}  {psp:8.3f}  {pbp:8.3f}" )
-        """
-        logging.info(f"css: {css:.3f}")
-        logging.info(f"cbs: {cbs:.3f}")
-        logging.info(f"pss: {pss:.3f}")
-        logging.info(f"pbs: {pbs:.3f}") 
-        logging.info("price")
-        logging.info(f"csp: {csp:.3f}")
-        logging.info(f"cbp: {cbp:.3f}")
-        logging.info(f"psp: {psp:.3f}")   
-        logging.info(f"pbp: {pbp:.3f}") 
-        logging.info(f"delta")
-        logging.info(f"csd: {csd:.3f}")
-        logging.info(f"cbd: {cbd:.3f}")
-        logging.info(f"psd: {psd:.3f}")
-        logging.info(f"pbd: {pbd:.3f}")  
-        """ 
+ 
         logging.info("******************")
         
         tc = csp - cbp + psp - pbp
@@ -376,10 +363,15 @@ class Candidate:
             print("pb:", self._pb)
         print("----")
 
-        propnames = list(self.get_props())
-        propnames.sort()
+        if PRINT_PROPS:
+            propnames = PRINT_PROPS
+        else:
+            propnames = list(self.get_props())
+            propnames.sort()
 
         for propname in propnames:
+            if not propname in self._props:
+                continue
             propval = self.get_prop(propname)
             proprank = self.get_rank(propname)
 
@@ -399,10 +391,13 @@ class Candidate:
             if "sort_key" in ARGS and ARGS["sort_key"] == propname:
                 s += " *"
             print(s)
+
+        """    
         if self._cs and self._ps:
             ssymm = self._cs.delta + self._ps.delta
             print(f"sell symm: {ssymm:.3f} ")
- 
+        """
+
     @property
     def cs(self):
         return self._cs
@@ -430,7 +425,7 @@ class Candidate:
         if propname in self._props:
             return self._props[propname]
          
-        logging.warn(f"get_prop unexpected propname: [{propname}]")
+        logging.warning(f"get_prop unexpected propname: [{propname}]")
 
     def has_prop(self, propname):
         return propname in self._props
@@ -438,7 +433,7 @@ class Candidate:
     def set_prop(self, propname, value):
         if propname in self._props:
             self._props[propname] = value
-        logging.warn(f"set_prop unexpected propname: [{propname}]")
+        logging.warning(f"set_prop unexpected propname: [{propname}]")
          
 
     def get_rank(self, propname):
@@ -446,7 +441,7 @@ class Candidate:
             logging.error(f"get_rank, unexpected propname: {propname}")
             return None
         if propname not in self._prop_ranks:
-            logging.warn(f"rank not set for {propname}")
+            logging.warning(f"rank not set for {propname}")
             return None
         return self._prop_ranks[propname]
  
@@ -463,7 +458,7 @@ class Candidate:
             logging.error(f"get_order, unexpected propname: {propname}")
             return None
         if propname not in self._prop_orders:
-            logging.warn(f"order not set for {propname}")
+            logging.warning(f"order not set for {propname}")
             return None
         return self._prop_orders[propname]
     
@@ -491,24 +486,18 @@ class Candidate:
         if winet <= WINET_BOUND:
             logging.info(f"BAD winet: {winet}")
             return False
-
+        """
         if self._ps.strike - self._pb.strike <= tc:
             logging.info(f"BAD tail: put < tc {tc}")
             return False   
-
+        
         if self._cb.strike - self._cs.strike <= tc:
             logging.info(f"BAD tail: call < tc {tc}")
             return False  
+        """
 
-        if et <= ET_BOUND:
-            #logging.info(f"BAD et: {et:.3f} <= {ET_BOUND}")
-            return False
-
-        if et_width < ET_WIDTH_BOUND:
-            logging.info(f"BAD et/width check: {et_width} < {ET_WIDTH_BOUND}")
-            return False
-        if tc_width < TC_WIDTH_BOUND:
-            logging.info(f"BAD tc/width check: {tc_width} < {TC_WIDTH_BOUND}")
+        if tc_width < MIN_TC_WIDTH:
+            logging.info(f"BAD tc/width check: {tc_width} < {MIN_TC_WIDTH}")
             return False
     
         return True
@@ -700,8 +689,7 @@ def load_from_file(symbol, dt_min, dt_max):
 
 def prelimination(cs=None, cb=None, ps=None, pb=None):  
                      
-    logging.info(f"pre elimination check")
-    fmt = f"Checking:"
+    fmt = f"prelimination Checking:"
     if cs:
         fmt += f" {cs.strike:.1f}"
     if cb:
@@ -710,53 +698,85 @@ def prelimination(cs=None, cb=None, ps=None, pb=None):
         fmt += f"/{ps.strike:.1f}"
     if pb:
         fmt += f"/{pb.strike:.1f}"
-    logging.info(fmt)
+    logging.debug(fmt)
 
     if cs and cs.strike >= cb.strike:
-        logging.info("BAD call strike: sell > buy")
+        logging.info("BAD prelimination call strike: sell > buy")
         return False
 
     if pb and pb.strike >= ps.strike:
-        logging.info("BAD put strike: buy > sell")
+        logging.info("BAD prelimination put strike: buy > sell")
         return False
     
     if ps and cs and ps.strike >= cs.strike:
-        logging.info("BAD call/put strikes: put > call")
+        logging.info("BAD prelimination call/put strikes: put > call")
         return False
 
     if cs and cb and cs.price <= cb.price:
-        logging.info("BAD call price: sell < buy")
+        logging.info("BAD prelimination call price: sell < buy")
         return False
 
     if ps and pb and ps.price <= pb.price:
-        logging.info('BAD put price: sell < buy')
+        logging.info('BAD prelimination put price: sell < buy')
         return False
 
     return True
 
-def ic_symmetry_check(cs=None, cb=None, ps=None, pb=None):
-    logging.info(f"IC symmetry check: {cs.strike:.1f}/{cb.strike:.1f}/{ps.strike:.1f}/{pb.strike:.1f}" )
+def check_ic_requirements(ic):
+    if not ic.cs or not ic.cb or not ic.ps or not ic.pb:
+        logging.error(f"invalid ic: {ic}")
+        return False
+    return check_ic_symmetry(ic)
+
+def check_ic_symmetry(ic):
+    logging.info(f"IC symmetry check: {ic.cs.strike:.1f}/{ic.cb.strike:.1f}/{ic.ps.strike:.1f}/{ic.pb.strike:.1f}" )
     
-    if cb.strike - cs.strike > WIDTH_SYMMETRY * (ps.strike - pb.strike):
-        logging.info(f"BAD width ratio call:put {cb.strike - cs.strike} : {ps.strike - pb.strike}")
+    if ic.cb.strike - ic.cs.strike > WIDTH_SYMMETRY * (ic.ps.strike - ic.pb.strike):
+        logging.info(f"BAD width ratio call:put {ic.cb.strike - ic.cs.strike} : {ic.ps.strike - ic.pb.strike}")
         return False
 
-    if ps.strike - pb.strike > WIDTH_SYMMETRY * (cb.strike - cs.strike):
-        logging.info(f"BAD width ratio: put:call {ps.strike - pb.strike} : {cb.strike - cs.strike}")
+    if ic.ps.strike - ic.pb.strike > WIDTH_SYMMETRY * (ic.cb.strike - ic.cs.strike):
+        logging.info(f"BAD width ratio: put:call {ic.ps.strike - ic.pb.strike} : {ic.cb.strike - ic.cs.strike}")
         return False
 
-    ssymm = cs.delta + ps.delta
+    ssymm = ic.cs.delta + ic.ps.delta
     logging.info(f"sell symm = {ssymm:.3f}")
     if not abs(ssymm) < SELL_SYMMETRY:
         logging.info(f"BAD symmetry: sell delta: {abs(ssymm)} < {SELL_SYMMETRY}")
         return False
 
-    symm = cs.delta + cb.delta + ps.delta + pb.delta
+    symm = ic.cs.delta + ic.cb.delta + ic.ps.delta + ic.pb.delta
     if not abs(symm) < TOTAL_SYMMETRY:
         logging.info(f"BAD symmetry: over all symm = {ssymm:.3f} < {TOTAL_SYMMETRY}")
         return False
 
-    return True       
+    return True      
+
+def check_ic_preq(candidate):
+    if candidate.has_prop("etc"):
+        et = candidate.get_prop("etc")
+        tc = candidate.get_prop("tcc")
+        logging.debug(f"check_ic_preq, got etc: {et}, tcc: {tc}")
+
+        
+    elif candidate.has_prop("etp"):
+        et = candidate.get_prop("etp")
+        #logging.debug(f"propnames: {candidate.get_props()}")
+        tc = candidate.get_prop("tpc")
+        logging.debug(f"check_ic_preq, got etp: {et}, tcp: {tc}")
+    else:
+        logging.warning("expected to find either etc or etp property")
+        return False
+        
+    if tc <= MIN_TC:
+        logging.debug("check_ic_preq False -> tc <= MIN_TC")
+        return False
+    if et <= MIN_ET:
+        logging.debug("check_ic_preq False -> et <= MIN_ET")
+        return False
+
+    logging.debug("check_ic_preq True")
+    return True
 
 def get_ps(cs, ps, ps_1, ps1, underlying):
     logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
@@ -775,7 +795,7 @@ def get_ps(cs, ps, ps_1, ps1, underlying):
         logging.info(f"ps_1.delta = {ps_1.delta} ps1.delta = { ps1.delta}")
         return True
 
-    if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
+    if not check_delta_range(ps.delta, option_type="ps", c_delta=cs.delta):
         logging.info("BAD delta range: put sell delta")
         return False
 
@@ -788,8 +808,8 @@ def get_candidates_put(contracts):
         ARGS["sort_key"] = "etp"
     candidates = []
     put_list = contracts["put"]
-    for option in put_list:
-        print(f"put_list.strike: {option.strike:.3f}")
+    #for option in put_list:
+        #print(f"put_list.strike: {option.strike:.3f}")
      
     underlying = contracts["underlying"]
     total_count = 0
@@ -797,15 +817,15 @@ def get_candidates_put(contracts):
     
     for i in range(len(put_list) - 1):
         pb = put_list[i]
-        logging.info(f"--------pb: {pb.desc}, strike:{pb.strike}, price:{pb.price}, delta:{pb.delta}")
-        if not check_delta_bound(pb.delta, option_type="pb"):
+        logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
+        if not check_delta_range(pb.delta, option_type="pb"):
             logging.info("BAD delta range: put buy delta")
             continue
         last_strike = pb.strike
         for j in range(i+1, len(put_list)):
             ps = put_list[j]
-            logging.info(f"------ps: {ps.desc} strike:{ps.strike}, price:{ps.price}, delta:{ps.delta}")
-            if not check_delta_bound(ps.delta, option_type="ps", c_delta=ps.delta):
+            logging.info(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
+            if not check_delta_range(ps.delta, option_type="ps", c_delta=ps.delta):
                 logging.info("BAD delta range: put sell delta")
                 continue
             this_strike = ps.strike
@@ -841,15 +861,15 @@ def get_candidates_call(contracts):
     
     for i in range(len(call_list) - 1):
         cs = call_list[i]
-        logging.info(f"--------cs: {cs.desc} strike:{cs.strike}, price:{cs.price}, delta:{cs.delta}")
-        if not check_delta_bound(cs.delta, option_type="cs"):
+        logging.info(f"--------cs: strike:{cs.strike}, delta:{cs.delta}, price:{cs.price}")
+        if not check_delta_range(cs.delta, option_type="cs"):
             logging.info("BAD delta range: call sell delta")
             continue
         last_strike = cs.strike
         for j in range(i+1, len(call_list)):
             cb = call_list[j]
-            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, price:{cb.price}, delta:{cb.delta}")
-            if not check_delta_bound(cb.delta, option_type="cb", c_delta=cs.delta):
+            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
+            if not check_delta_range(cb.delta, option_type="cb", c_delta=cs.delta):
                 logging.info("BAD delta range: call buy delta")
                 continue
             this_strike = cb.strike
@@ -870,6 +890,48 @@ def get_candidates_call(contracts):
     print("total candidates:", total_count)
     print("meet req candidates:", meet_requirements_count)                    
     return candidates
+
+def get_ic_candidates(contracts):
+    if "sort_key" not in ARGS:
+        ARGS["sort_key"] = "et"
+
+    ic_candidates = []
+    underlying = contracts["underlying"]
+    
+    call_candidates = get_candidates_call(contracts)
+
+    call_ic_candidates = []
+    for candidate in call_candidates:
+        if check_ic_preq(candidate):
+            call_ic_candidates.append(candidate)
+
+    put_candidates = get_candidates_put(contracts)
+    put_ic_candidates = []
+    for candidate in put_candidates:
+        if check_ic_preq(candidate):
+            put_ic_candidates.append(candidate)
+
+    logging.info("call_ic_candidates:") 
+    for cand in call_ic_candidates:
+        logging.info(f"call spread: {cand.cs.strike}/{cand.cb.strike}") 
+    logging.info("put_ic_candidates:") 
+    for cand in put_ic_candidates:
+        logging.info(f"put spread: {cand.ps.strike}/{cand.pb.strike}") 
+
+ 
+    for call_candidate in call_ic_candidates:  
+       cs = call_candidate.cs
+       cb = call_candidate.cb
+       for put_candidate in put_ic_candidates:
+           ps = put_candidate.ps
+           pb = put_candidate.pb
+           candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
+           if check_ic_requirements(candidate):
+               ic_candidates.append(candidate)
+               logging.info(f"ic_candidate: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
+
+    return ic_candidates
+
 
 def get_candidates_put_and_call(contracts):
     if "sort_key" not in ARGS:
@@ -895,14 +957,14 @@ def get_candidates_put_and_call(contracts):
     for i in range(len(call_list) - 1):
         cs = call_list[i]
         logging.info(f"--------cs: {cs.desc}, strike:{cs.strike}, price:{cs.price}, delta:{cs.delta}")
-        if not check_delta_bound(cs.delta, option_type="cs"):
+        if not check_delta_range(cs.delta, option_type="cs"):
             logging.info("BAD delta range: call sell delta")
             continue
         last_strike = cs.strike
         for j in range(i+1, len(call_list)):
             cb = call_list[j]
             logging.info(f"------cb: {cb.desc} strike:{cb.strike}, price:{cb.price}, delta:{cb.delta}")
-            if not check_delta_bound(cb.delta, option_type="cb", c_delta=cs.delta):
+            if not check_delta_range(cb.delta, option_type="cb", c_delta=cs.delta):
                 logging.info("BAD delta range: call buy delta")
                 continue
             if not prelimination(cs=cs, cb=cb):
@@ -927,7 +989,7 @@ def get_candidates_put_and_call(contracts):
                 logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
 
                 if (not ps.strike <= 2*underlying - cs.strike < put_list[k+1].strike) and (not put_list[k-1].strike <= 2*underlying - cs.strike < ps.strike):
-                    if not check_delta_bound(ps.delta, option_type="ps", c_delta=cs.delta):
+                    if not check_delta_range(ps.delta, option_type="ps", c_delta=cs.delta):
                         logging.info("BAD bound: put sell delta")
                         continue
                 """
@@ -935,10 +997,10 @@ def get_candidates_put_and_call(contracts):
                 for l in range(0, k):
                     pb = put_list[l]
                                     
-                    logging.info(f"----ps: {ps.desc} strike:{ps.strike}, price:{ps.price}, delta:{ps.delta}")
+                    logging.info(f"----ps: {ps.desc} strike:{ps.strike}, price:{ps.delta}, delta:{ps.price}")
 
-                    logging.info(f"--pb: {pb.desc} strike:{pb.strike}, price:{pb.price}, delta:{pb.delta}")
-                    if not check_delta_bound(pb.delta, option_type="pb", c_delta=ps.delta):
+                    logging.info(f"--pb: {pb.desc} strike:{pb.strike}, price:{pb.delta}, delta:{pb.price}")
+                    if not check_delta_range(pb.delta, option_type="pb", c_delta=ps.delta):
                         logging.info("BAD bound: put buy delta")
                         continue
                     this_strike = pb.strike
@@ -1064,7 +1126,8 @@ if "call" not in option_types:
 elif "put" not in option_types:
     candidates = get_candidates_call(contracts)
 else:
-    candidates = get_candidates_put_and_call(contracts)
+    #candidates = get_candidates_put_and_call(contracts)
+    candidates = get_ic_candidates(contracts)
  
 print("got", len(candidates), "candidates")
 print("======================")
