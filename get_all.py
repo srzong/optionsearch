@@ -54,11 +54,14 @@ with open(stocklist_file, "r") as f:
             line = f.readline()
             continue
         print(symbol)
-        outdir = folder
+
+        # do ic
+        outdir = folder + "/ic"
         rc = get_options(symbol, outdir=outdir)
         if rc == 0:
             symbols.append(symbol)    
         
+        # do puts
         outdir = folder + "/puts"
         rc = get_options(symbol, option="--puts", outdir=outdir) 
         #print(f"{cnt}: {len(fields)}")

@@ -3,131 +3,105 @@ import sys
 import time
 from datetime import datetime
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+#
+# Main
+#
+if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+    print("Usage: python get_summary.py [stocklist_file] [outdir]")
+    sys.exit(1)
+
+stocklist_file = "stocks.csv"
 outdir = "out"
+
 if len(sys.argv) > 1:
-    outdir = sys.argv[1]
-outfiles = os.listdir(outdir)
+    stocklist_file = sys.argv[1]
+
+if len(sys.argv) > 2:
+    outdir = sys.argv[2]
+
+symbols = []
+with open(stocklist_file, "r") as f:
+    line = f.readline()
+    while line:
+        fields = line.strip().split(',')
+        if not fields:
+            line = f.readline()
+            continue
+        symbol = fields[0]
+        if not symbol.isupper():
+            #print(f"ignoring symbol: {symbol}")
+            line = f.readline()
+            continue
+        #print(symbol)
+        symbols.append(symbol)
+        line = f.readline()
+
+if len(symbols) == 0:
+    eprint("no symbols found!")
+    sys.exit(1)
+
+icdir = f"{outdir}/ic/"
+calldir = f"{outdir}/calls/"
+putdir = f"{outdir}/puts/"
+
 dt = datetime.fromtimestamp(time.time())
 print(f"{dt.month}/{dt.day}/{dt.year}")
-print(",,IC,,,,CALL,,,,PUT,,,,")
-print("SYMBOL,UNDERLYING,NUM,MAX ET,TC,TC/W,NUM,MAX ETC,TCC,TCC/W,NUM,MAX ETP,TPC,TPC/W,BEVEN")
-for filename in outfiles:
-    if not filename.endswith(".txt"):
-        continue
-    filepath = outdir + "/" + filename
-    symbol = filename[:-4]
-    #print(f"reading: {filepath}, symbol: [{symbol}]" )
+print(",,IC,,,,,CALL,,,,,PUT,,,,")
+print("SYMBOL,UNDERLYING,NUM,MAX ET,TC,TC/W,BEVEN,NUM,MAX ETC,TCC,TCC/W,BEVENC,NUM,MAX ETP,TPC,TPC/W,BEVENP")
+for symbol in symbols:
+    #print(f"got symbol: {symbol}")
     underlying = None
-    out_num = 0
-    out_max_et = None
-    out_tc = None
-    out_tcw = None
-    get_next_tc = False
-    get_next_tcw = False
-    get_beven = False
-    call_num = 0
-    call_max_etc = -999.0
-    call_tcc = -999.0
-    call_tccw = -999.0
-    put_num = 0
-    put_max_etp = -999.0
-    put_tpc = -999.0
-    put_tpcw = -999.0 
-    beven = 0.0
-
+    counts = {"et": 0, "etc": 0, "etp": 0}
+    variables = ("et", "etc", "etp", "tc", "tc_width", "tcc", "tcc_w", "tpc", "tpc_w", "beven", "bevenc","bevenp")
     
-
-    with open(filepath, "r") as f:
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            line = line.strip()
-            fields = line.split()
-            if len(fields) == 0:
-                continue
-            if not underlying and line.find("underlying") > -1:
-                underlying = float(fields[-1])
-            if line.startswith("et:"):
-                out_num += 1
-                et  = float(fields[1])    
-                if not out_max_et or et > out_max_et:
-                    out_max_et = et
-                    get_next_tc = True
-                    get_next_tcw = True
-                    get_beven = True
-            if get_next_tc and line.startswith("tc:"):
-                out_tc = float(fields[1])
-                get_next_tc = False
-            if get_next_tcw and line.startswith("tc_width"):
-                out_tcw = float(fields[1])
-                get_next_tcw = False
-            if get_beven and line.startswith("beven:"):
-                beven = float(fields[1])
-                get_beven = False
-    filepath = outdir + f"calls/{symbol}.txt"
-    get_next_tc = False
-    get_next_tcw = False
-    get_beven = False
-    with open(filepath, "r") as f:
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            line = line.strip()
-            fields = line.split()
-            if len(fields) == 0:
-                continue
-            if line.startswith("etc:"):
-                et = float(fields[1])    
-                if et > 0.0:
-                    call_num += 1
-                if not call_max_etc or et > call_max_etc:
-                    call_max_etc = et
-                    get_next_tc = True
-                    get_next_tcw = True
-                    get_beven = True
-            if get_next_tc and line.startswith("tcc:"):
-                call_tcc = float(fields[1])
-                get_next_tc = False
-            if get_next_tcw and line.startswith("tcc_w:"):
-                call_tccw = float(fields[1])
-                get_next_tcw = False
-            if get_beven and line.startswith("beven:"):
-                beven = float(fields[1])
-                get_beven = False
-    filepath = outdir + f"puts/{symbol}.txt"
-    get_next_tc = False
-    get_next_tcw = False
-    get_beven = False
-    with open(filepath, "r") as f:
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            line = line.strip()
-            fields = line.split()
-            if len(fields) == 0:
-                continue
-            if line.startswith("etp:"):
-                
-                et = float(fields[1])  
-                if et > 0.0:
-                    put_num += 1  
-                if not put_max_etp or et > put_max_etp:
-                    put_max_etp = et
-                    get_next_tc = True
-                    get_next_tcw = True
-            if get_next_tc and line.startswith("tpc:"):
-                put_tpc = float(fields[1])
-                get_next_tc = False
-            if get_next_tcw and line.startswith("tpc_w:"):
-                put_tpcw = float(fields[1])
-                get_next_tcw = False
-    
+    filename = symbol + ".txt"
+    filepaths = (icdir + filename, calldir+filename, putdir+filename)
+    values = {}
+    for filepath in filepaths:
+        #print(f"reading: {filepath}, symbol: [{symbol}]" )
+        if not os.path.isfile(filepath):
+            eprint(f"file: {filepath} not found")
+            continue
+        got_max_et = False  
+        get_values = False
+        with open(filepath, "r") as f:
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+                line = line.strip()
+                fields = line.split()
+                if len(fields) == 0:
+                    continue
+                if not underlying and line.find("underlying") > -1:
+                    underlying = float(fields[-1])
+                for variable in variables:
+                    if line.startswith(variable+':'):
+                        value = float(fields[1])
+                        if variable.startswith("et"):
+                            counts[variable] = counts[variable] + 1
+                            # handler for et, etc, etp
+                            if variable not in values or value > values[variable]:
+                                values[variable] = value
+                                get_values = True
+                            else:
+                                # not max et/etc/etp
+                                get_values = False
+                        elif get_values:
+                            values[variable] = value
+                        else:
+                            pass  # ignore
        
-    if out_num and out_max_et and out_max_et > 0.0 and out_tc and out_tcw:
-        print(f"{symbol},${underlying},{out_num},{out_max_et:.3f},{out_tc:.3f},{out_tcw:.3f},{call_num},{call_max_etc:.3f},{call_tcc:.3f},{call_tccw:.3f},{put_num},{put_max_etp:.3f},{put_tpc:.3f},{put_tpcw:.3f},{beven:.3f}")
+    if counts["et"] > 0 and "et" in values and values["et"] > 0.0:
+        for variable in variables:
+            if variable not in values:
+                eprint(f"{variable} not found")
+                values[variable] = 0.0
+         
+        print(f"{symbol},${underlying},{counts['et']},{values['et']:.3f},{values['tc']:.3f},{values['tcc_w']:.3f},{values['beven']:.3f},{counts['etc']},{values['etc']:.3f},{values['tcc']:.3f},{values['tcc_w']:.3f},{values['bevenc']:.3f},{counts['etp']},{values['etp']:.3f},{values['tpc']:.3f},{values['tpc_w']:.3f},{values['bevenp']:.3f}")
  
 
 

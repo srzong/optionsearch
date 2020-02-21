@@ -25,7 +25,7 @@ WIDTH_SYMMETRY = 10 #10, no use
 NON_REVERSE_SORT = {"width", "ml", "symm"}
 PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_width", "tpc_w", "tcc_w", "beven", "bevenp", "bevenc"]
 
-loglevel = logging.DEBUG # DEBUG or INFO or ERROR
+loglevel = logging.INFO # DEBUG or INFO or ERROR
 
 
 def check_delta_range(delta, option_type=None, c_delta=None):
@@ -629,7 +629,7 @@ def get_contracts(symbol, chains):
  
     return {"underlying": underlying, "call": call_options, "put": put_options}   
 
-def load_from_file(symbol, dt_min, dt_max):
+def load_from_file(symbol, dt_min, dt_max, useold=False):
     # search data files for valid file to load
     logging.info(f"load_file_file({symbol}, {dt_min}, {dt_max})")
     filenames = os.listdir("data")
@@ -651,8 +651,12 @@ def load_from_file(symbol, dt_min, dt_max):
             datafile = filename
             # keep going to get most recent data file
     if not datafile:
-        logging.info("no datafile found")
-        return None
+        if useold and len(filenames) > 0:
+            # grab the most recent file
+            datafile = filenames[-1]
+        else:
+            logging.info("no datafile found")
+            return None
 
     underlying = None
     calls = []
@@ -1025,7 +1029,7 @@ def get_candidates_put_and_call(contracts):
         
 
 def print_usage():
-    print("usage: python get_options.py [--skip-delta] [--sort prop] [--calls|--puts] [--reload] SYM")
+    print("usage: python get_options.py [--skip-delta] [--sort prop] [--calls|--puts] [--reload|--useold] SYM")
 
 
 #
@@ -1037,6 +1041,7 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
 
 symbols = []
 reload = False
+useold = False
 ARGS["skip_delta"] = False
 ARGS["option_type"] = "ALL"  # or CALLS_ONLY or PUTS_ONLY
 
@@ -1061,6 +1066,8 @@ for argn in range(1, len(sys.argv)):
             ARGS["skip_delta"] = True
         elif argval == "--reload":
             reload = True
+        elif argval == "--useold":
+            useold = True    
         elif argval == "--calls":
             ARGS["option_type"] = "CALLS_ONLY"
         elif argval == "--puts":
@@ -1075,10 +1082,11 @@ for argn in range(1, len(sys.argv)):
 if not symbols:
     print_usage()
     sys.exit(1)
+if reload and useold:
+    print_usage()
+    sys.exit(1)
 symbol = symbols[0]
 print("getting symbol:", symbol)
-
-
 
 seconds_in_day = 24.0 * 60.0 * 60.0
 exp_target_min = time.time() + 41.0 * seconds_in_day
@@ -1092,7 +1100,7 @@ dt_max = datetime(year=dt.year, month=dt.month, day=dt.day)
 contracts = None
 if not reload:
     # see if we can load from previous file
-    contracts = load_from_file(symbol, dt_min, dt_max)
+    contracts = load_from_file(symbol, dt_min, dt_max, useold=useold)
 
 if not contracts:
     chains = get_chains(symbol, dt_min, dt_max)
