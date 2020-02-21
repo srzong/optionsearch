@@ -7,9 +7,9 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165, 0.32)
+CS_DELTA_RANGE = (0.165, 0.42)
 CB_DELTA_RANGE = (0.01, 0.30)
-PS_DELTA_RANGE = (-0.32, -0.165)
+PS_DELTA_RANGE = (-0.42, -0.165)
 PB_DELTA_RANGE = (-0.30, -0.01)
 
 MIN_ET = 0
@@ -172,7 +172,7 @@ class Candidate:
             tcc_w = tcc / width
 
             logging.info("******************")
-            logging.info(f"CALL Spread: {cs.strike}/{cb.strike}" )
+            logging.info(f"Cand CALL Spread: {cs.strike}/{cb.strike}" )
             logging.info(f"strike: {cs.strike:8.1f}  {cb.strike:8.1f}" )
             logging.info(f"delta:  {cs.delta:8.3f}  {cb.delta:8.3f}" )
             logging.info(f"price:  {cs.price:8.3f}  {cb.price:8.3f}" )
@@ -210,7 +210,7 @@ class Candidate:
                 etp = epc + epch + eplh + epl
 
                 logging.info("******************")
-                logging.info(f"PUT Spread: {ps.strike}/{pb.strike}" )
+                logging.info(f"Cand PUT Spread: {ps.strike}/{pb.strike}" )
                 logging.info(f"strike: {ps.strike:8.1f}  {pb.strike:8.1f}" )
                 logging.info(f"delta:  {ps.delta:8.3f}  {pb.delta:8.3f}" )
                 logging.info(f"price:  {ps.price:8.3f}  {pb.price:8.3f}" )
@@ -649,7 +649,7 @@ def load_from_file(symbol, dt_min, dt_max):
         file_date = datetime.fromisoformat(datestring)
         if file_date >= dt_min and file_date <= dt_max:
             datafile = filename
-            break
+            # keep going to get most recent data file
     if not datafile:
         logging.info("no datafile found")
         return None
@@ -911,9 +911,11 @@ def get_ic_candidates(contracts):
         if check_ic_preq(candidate):
             put_ic_candidates.append(candidate)
 
+    logging.info("***************CCCC**************") 
     logging.info("call_ic_candidates:") 
     for cand in call_ic_candidates:
         logging.info(f"call spread: {cand.cs.strike}/{cand.cb.strike}") 
+    logging.info("***************PPPP***************")         
     logging.info("put_ic_candidates:") 
     for cand in put_ic_candidates:
         logging.info(f"put spread: {cand.ps.strike}/{cand.pb.strike}") 
@@ -1129,7 +1131,7 @@ else:
     #candidates = get_candidates_put_and_call(contracts)
     candidates = get_ic_candidates(contracts)
  
-print("got", len(candidates), "candidates")
+print("got", len(candidates), "IC candidates")
 print("======================")
 
 propnames = set()
@@ -1166,9 +1168,14 @@ for propname in propnames:
         prev = val
 
 
-print("======================")
-sort_key = ARGS["sort_key"]
-print(f"sorting by: [{sort_key}]")
+if len(candidates) == 0:
+    print("no candidates!")
+else:
+    print("======================")
+    sort_key = ARGS["sort_key"]
+    first_candidate = candidates[0]
+    underlying = first_candidate.underlying
+    print(f"{symbol}: {underlying} sorting by: [{sort_key}]")
 candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
 
 printCandidates(candidates)

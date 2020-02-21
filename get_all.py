@@ -3,7 +3,7 @@ import sys
 import os
 
 def get_options(symbol, option=None, outdir=None):
-    args = ["python", "get_options.py"]
+    args = ["python", "get_options.py"]  #, "--reload"]
     if option:
         args.append(option)
     args.append(symbol)
@@ -54,14 +54,19 @@ with open(stocklist_file, "r") as f:
             line = f.readline()
             continue
         print(symbol)
-        outdir = folder + "/calls"
-        rc = get_options(symbol, option="--calls", outdir=outdir)
+        outdir = folder
+        rc = get_options(symbol, outdir=outdir)
         if rc == 0:
-            symbols.append(symbol)     
+            symbols.append(symbol)    
+        
         outdir = folder + "/puts"
         rc = get_options(symbol, option="--puts", outdir=outdir) 
         #print(f"{cnt}: {len(fields)}")
+        
+        outdir = folder + "/calls"
+        rc = get_options(symbol, option="--calls", outdir=outdir)
         line = f.readline()
+
 
 print(f"got data for {len(symbols)} symbols")
 cnt = 0
