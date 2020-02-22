@@ -7,23 +7,24 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165, 0.42)
+CS_DELTA_RANGE = (0.165, 0.32)
 CB_DELTA_RANGE = (0.01, 0.30)
-PS_DELTA_RANGE = (-0.42, -0.165)
+PS_DELTA_RANGE = (-0.32, -0.165)
 PB_DELTA_RANGE = (-0.30, -0.01)
 
 MIN_ET = 0
 MIN_TC = 0
-MIN_TC_WIDTH = 0
+MIN_TCW = 0
+MIN_TCU = 0
 
 SELL_SYMMETRY = 1 #0.12
 TOTAL_SYMMETRY = 1 #0.25
 WIDTH_SYMMETRY = 10 #10, no use
 
-# SORT_KEYS = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
+# SORT_KEYS = ("et", "ml", "width", "tc_w","tc", "symm", "tc_u", "tcc", "tcc_w")
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
-PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_width", "tpc_w", "tcc_w", "beven", "bevenp", "bevenc"]
+PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_w", "tpc_w", "tcc_w", "tc_u", "tpc_u", "tcc_u", "beven", "bevenp", "bevenc"]
 
 loglevel = logging.INFO # DEBUG or INFO or ERROR
 
@@ -143,15 +144,11 @@ class Candidate:
 
         # expected props when cs, cb, ps, and pb are defined:
         # tc
-        # tc_ml
-        # et_ml
         # et
-        # et_width
-        # et_tc
         # width
-        # tc_width
+        # tc_w
         # ml
-        # winet
+        # tc_u
         # symm
         
         if cs and cb and not ps and not pb:
@@ -162,14 +159,15 @@ class Candidate:
             delta_cc = 1.0 - cs.delta
             delta_cch = tcc * (cs.delta - cb.delta)/width
             delta_clh = cs.delta - cb.delta - delta_cch
-            bevenc = (delta_cc + delta_cch) * 100
+            bevenc = 100 * (delta_cc + delta_cch)
             cl = width - tcc
             ecc = tcc * delta_cc
             ecch = 0.5 * tcc * delta_cch
             eclh = -0.5 * cl * delta_clh
             ecl = -cl * cb.delta
             etc = ecc + ecch + eclh + ecl
-            tcc_w = tcc / width
+            tcc_w = 100 * (tcc / width)
+            tcc_u = 100 * (tcc / underlying)
 
             logging.info("******************")
             logging.info(f"Cand CALL Spread: {cs.strike}/{cb.strike}" )
@@ -185,11 +183,13 @@ class Candidate:
             logging.info(f"ecc: {ecc:.3f}  ecch: {ecch:.3f}  eclh: {eclh:.3f}  ecl: {ecl:.3f}") 
             logging.info(f"etc: {etc:.3f}")
             logging.info(f"tcc/w: {tcc_w:.3f}")
-            logging.info(f"bevenc: {bevenc:.2f}%")
+            logging.info(f"tcc/u: {tcc_u:.3f}")
+            logging.info(f"bevenc: {bevenc:.2f}")
 
             self._props["tcc"] = tcc
             self._props["width"] = width
             self._props["tcc_w"] = tcc_w
+            self._props["tcc_u"] = tcc_u
             self._props["etc"] = etc
             self._props["bevenc"] = bevenc
             return
@@ -197,11 +197,12 @@ class Candidate:
             tpc = ps.price - pb.price
             width = ps.strike - pb.strike
             if width:
-                tpc_w = tpc / width
+                tpc_w = 100 * (tpc / width)
+                tpc_u = 100 * (tpc / underlying)
                 delta_pc = 1.0 + ps.delta   #+
                 delta_pch = tpc * (pb.delta - ps.delta) / width #+
                 delta_plh = pb.delta - ps.delta - delta_pch #+
-                bevenp = (delta_pc + delta_pch) * 100 
+                bevenp = 100 * (delta_pc + delta_pch)
                 pl = width - tpc
                 epc = tpc * delta_pc
                 epch = 0.5 * tpc * delta_pch
@@ -223,11 +224,13 @@ class Candidate:
                 logging.info(f"epc: {epc:.3f}  epch: {epch:.3f}  eplh: {eplh:.3f}  epl: {epl:.3f}") 
                 logging.info(f"etp: {etp:.3f}")
                 logging.info(f"tpc/w: {tpc_w:.3f}")
-                logging.info(f"bevenp: {bevenp:.2f}%")
+                logging.info(f"tpc/u: {tpc_u:.3f}")
+                logging.info(f"bevenp: {bevenp:.2f}")
 
                 self._props["tpc"] = tpc
                 self._props["width"] = width
                 self._props["tpc_w"] = tpc_w
+                self._props["tpc_u"] = tpc_u
                 self._props["etp"] = etp
                 self._props["bevenp"] = bevenp
             return
@@ -278,7 +281,7 @@ class Candidate:
             delta_pd = psd - pbd - delta_pc #-
             tcl = cbs - css - tc
             tpl = pss - pbs - tc
-            beven = (1.0 - csd + psd + delta_cc - delta_pc) * 100
+            beven = 100 * (1.0 - csd + psd + delta_cc - delta_pc) 
             
             logging.info(f"d_cc: {delta_cc:.3f}")
             logging.info(f"d_pc:  {delta_pc:.3f}")   
@@ -286,7 +289,7 @@ class Candidate:
             logging.info(f"d_pd: {delta_pd:.3f}")            
             logging.info(f"tcl:  {tcl:.3f}")            
             logging.info(f"tpl: {tpl:.3f}")
-            logging.info(f"beven: {beven:.2f}%")
+            logging.info(f"beven: {beven:.2f}")
             
             etcch = 0.5 * tc * delta_cc
             etpch = -0.5 * tc * delta_pc
@@ -295,7 +298,7 @@ class Candidate:
             etcd = -tcl * cbd 
             etpd = tpl * pbd 
             et = etca + etcch + etcdh + etpch + etpdh + etcd + etpd
-            winet = etca + etcch + etpch
+            
             
             """
             logging.info(f"etca: {etc:.3f}")
@@ -307,40 +310,24 @@ class Candidate:
             logging.info(f"epd: {etpd:.3f}")
             
             logging.info(f"et: {et:.3f}")
-            logging.info(f"winet: {winet:.3f}")    
+            logging.info(f"tc_u: {tc_u:.4f}")    
             """
-            tc_width = tc / width
-            et_width = et/width
-            et_tc = et/tc
+            tc_w = 100 * (tc / width)
+            tc_u = 100 * (tc / underlying)
 
             if tcl > tpl:
                 ml = tcl
             else:
                 ml = tpl
-
-            et_ml = et/ml
-            tc_ml = tc/ml
-            et_tc = et/tc
-            """
-            logging.info(f"ml: {ml:.3f}")
-            logging.info(f"tc/ml: {tc_ml:.3f}")
-            logging.info(f"et/ml: {et_ml:.3f}")
-            logging.info(f"tc/width: {tc_width:.3f}")
-            logging.info(f"et/width: {et_width:.3f}")
-            logging.info(f"et/tc: {et_tc:.3f}")
-            """
+  
             # set properties
             self._props["tc"] = tc
             self._props["width"] = width
             self._props["et"] = et
-            self._props["tc_width"] = tc_width
-            self._props["et_width"] = et_width
-            self._props["et_tc"] = et_tc
-            self._props["ml"] = ml
-            self._props["et_ml"] = et_ml
-            self._props["tc_ml"] = tc_ml
-            self._props["symm"] = abs(symm)
-            self._props["winet"] = winet
+            self._props["tc_w"] = tc_w
+
+            #self._props["symm"] = abs(symm)
+            self._props["tc_u"] = tc_u
             self._props["beven"] = beven
         except ZeroDivisionError:
             logging.info("zerodivisionerror")
@@ -472,19 +459,18 @@ class Candidate:
     def meets_requirements(self):
         logging.info(f"requirements check")
 
-        for propname in ("winet", "et", "tc", "et_width", "tc_width"):
+        for propname in ("tc_u", "et", "tc", "tc_w"):
             if propname not in self._props:
                 logging.info(f"meet_requirements, {propname} not set")
                 return False
 
-        winet = self._props["winet"]
+        tc_u = self._props["tc_u"]
         et = self._props["et"]
-        et_width = self._props["et_width"]
         tc = self._props["tc"]
-        tc_width = self._props["tc_width"]
-
-        if winet <= WINET_BOUND:
-            logging.info(f"BAD winet: {winet}")
+        tc_w = self._props["tc_w"]
+        
+        if tc_u <= MIN_TCU:
+            logging.info(f"BAD tcu: {tc_u}")
             return False
         """
         if self._ps.strike - self._pb.strike <= tc:
@@ -496,8 +482,8 @@ class Candidate:
             return False  
         """
 
-        if tc_width < MIN_TC_WIDTH:
-            logging.info(f"BAD tc/width check: {tc_width} < {MIN_TC_WIDTH}")
+        if tc_w < MIN_TCW:
+            logging.info(f"BAD tc/w check: {tc_w} < {MIN_TCW}")
             return False
     
         return True
@@ -505,7 +491,7 @@ class Candidate:
         
 def printCandidates(candidates):
     total = len(candidates)
-    # propnames = ("tc_ml", "et", "et_ml", "ml", "width", "tc_width", "et_width", "et_tc", "tc", "symm", "winet", "tcc", "tcc_w")
+    # propnames = ("et", "ml", "width", "tc_w", "tc", "symm", "tc_u", "tcc", "tcc_w")
     propnames = set()
     min_vals = {}
     max_vals = {}
@@ -847,7 +833,7 @@ def get_candidates_put(contracts):
                     meet_requirements_count += 1        
 
     print ("----------------------")
-    print("total candidates:", total_count)
+    print("total put candidates:", total_count)
     print("meet req candidates:", meet_requirements_count)                    
     return candidates
 
@@ -891,7 +877,7 @@ def get_candidates_call(contracts):
                     meet_requirements_count += 1
 
     print ("----------------------")
-    print("total candidates:", total_count)
+    print("total call candidates:", total_count)
     print("meet req candidates:", meet_requirements_count)                    
     return candidates
 
@@ -1023,7 +1009,7 @@ def get_candidates_put_and_call(contracts):
                             meet_requirements_count += 1
 
     print ("----------------------")
-    print("total candidates:", total_count)
+    print("total ic candidates:", total_count)
     print("meet req candidates:", meet_requirements_count)                    
     return candidates
         

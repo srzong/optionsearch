@@ -49,13 +49,13 @@ putdir = f"{outdir}/puts/"
 
 dt = datetime.fromtimestamp(time.time())
 print(f"{dt.month}/{dt.day}/{dt.year}")
-print(",,IC,,,,,CALL,,,,,PUT,,,,")
-print("SYMBOL,UNDERLYING,NUM,MAX ET,TC,TC/W,BEVEN,NUM,MAX ETC,TCC,TCC/W,BEVENC,NUM,MAX ETP,TPC,TPC/W,BEVENP")
+print(",,IC,,,,,,CALL,,,,,,PUT,,,,")
+print("SYMBOL,UNDERLYING,NUM,MAX ET,TC,TC/W,TC/U,BEVEN,NUM,MAX ETC,TCC,TCC/W,TCC/U,BEVENC,NUM,MAX ETP,TPC,TPC/W,TPC/U,BEVENP")
 for symbol in symbols:
     #print(f"got symbol: {symbol}")
     underlying = None
     counts = {"et": 0, "etc": 0, "etp": 0}
-    variables = ("et", "etc", "etp", "tc", "tc_width", "tcc", "tcc_w", "tpc", "tpc_w", "beven", "bevenc","bevenp")
+    variables = ("et", "etc", "etp", "tc", "tc_w", "tc_u", "tcc", "tcc_w", "tcc_u", "tpc", "tpc_w", "tpc_u", "beven", "bevenc","bevenp")
     
     filename = symbol + ".txt"
     filepaths = (icdir + filename, calldir+filename, putdir+filename)
@@ -100,8 +100,7 @@ for symbol in symbols:
             if variable not in values:
                 eprint(f"{variable} not found")
                 values[variable] = 0.0
-         
-        print(f"{symbol},${underlying},{counts['et']},{values['et']:.3f},{values['tc']:.3f},{values['tcc_w']:.3f},{values['beven']:.3f},{counts['etc']},{values['etc']:.3f},{values['tcc']:.3f},{values['tcc_w']:.3f},{values['bevenc']:.3f},{counts['etp']},{values['etp']:.3f},{values['tpc']:.3f},{values['tpc_w']:.3f},{values['bevenp']:.3f}")
+        print(f"{symbol},${underlying},{counts['et']},{values['et']:.3f},{values['tc']:.3f},{values['tc_w']:.3f},{values['tc_u']:.3f},{values['beven']:.3f},{counts['etc']},{values['etc']:.3f},{values['tcc']:.3f},{values['tcc_w']:.3f},{values['tcc_u']:.3f},{values['bevenc']:.3f},{counts['etp']},{values['etp']:.3f},{values['tpc']:.3f},{values['tpc_w']:.3f},{values['tpc_u']:.3f},{values['bevenp']:.3f}")
  
 
 
