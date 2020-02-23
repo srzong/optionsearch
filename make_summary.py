@@ -6,21 +6,30 @@ from datetime import datetime
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
+def print_usage():
+    print("Usage: python make_summary.py [stocklist_file] [outdir]")
+
+
 #
 # Main
 #
 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
-    print("Usage: python get_summary.py [stocklist_file] [outdir]")
+    print_usage()
     sys.exit(1)
 
-stocklist_file = "stocks.csv"
-outdir = "out"
+if len(sys.argv) <= 2 or sys.argv[1] in ('-h', '--help'):
+    print_usage()
+    sys.exit(0)
 
-if len(sys.argv) > 1:
-    stocklist_file = sys.argv[1]
-
-if len(sys.argv) > 2:
-    outdir = sys.argv[2]
+stocklist_file = sys.argv[1]
+if not os.path.isfile(stocklist_file):
+    eprint(f"{stocklist_file} not found")
+    sys.exit(1)
+ 
+outdir = sys.argv[2]
+if not os.path.isdir(outdir):
+    eprint(f"{outdir} not found")
+    sys.exit(1)
 
 symbols = []
 with open(stocklist_file, "r") as f:
@@ -49,11 +58,13 @@ putdir = f"{outdir}/puts/"
 
 dt = datetime.fromtimestamp(time.time())
 print(f"{dt.month}/{dt.day}/{dt.year}")
-print(",,IC,,,,,,CALL,,,,,,PUT,,,,")
-print("SYMBOL,UNDERLYING,NUM,MAX ET,TC,TC/W,TC/U,BEVEN,NUM,MAX ETC,TCC,TCC/W,TCC/U,BEVENC,NUM,MAX ETP,TPC,TPC/W,TPC/U,BEVENP")
+print(",,,,IC,,,,,,,CALL,,,,,PUT,,,,")
+print("SYMBOL,UNDERLYING,VOLATILITY,INTEREST,NUM,MAX ET,TC,TC/W,TC/U,BEVEN,NUM,MAX ETC,TCC,TCC/W,TCC/U,BEVENC,NUM,MAX ETP,TPC,TPC/W,TPC/U,BEVENP")
 for symbol in symbols:
     #print(f"got symbol: {symbol}")
-    underlying = None
+    underlying = 0.0
+    volatility = 0.0
+    interestRate = 0.0
     counts = {"et": 0, "etc": 0, "etp": 0}
     variables = ("et", "etc", "etp", "tc", "tc_w", "tc_u", "tcc", "tcc_w", "tcc_u", "tpc", "tpc_w", "tpc_u", "beven", "bevenc","bevenp")
     
@@ -78,6 +89,10 @@ for symbol in symbols:
                     continue
                 if not underlying and line.find("underlying") > -1:
                     underlying = float(fields[-1])
+                if not volatility and line.find("volatility") > -1:
+                    volatility = float(fields[-1])
+                if not interestRate and line.find("interestRate") > -1:
+                    interestRate = float(fields[-1])
                 for variable in variables:
                     if line.startswith(variable+':'):
                         value = float(fields[1])
@@ -95,12 +110,13 @@ for symbol in symbols:
                         else:
                             pass  # ignore
        
-    if counts["et"] > 0 and "et" in values and values["et"] > 0.0:
+    # if counts["et"] > 0 and "et" in values and values["et"] > 0.0:
+    if True:
         for variable in variables:
             if variable not in values:
-                eprint(f"{variable} not found")
+                eprint(f"{symbol}: {variable} not found")
                 values[variable] = 0.0
-        print(f"{symbol},${underlying},{counts['et']},{values['et']:.3f},{values['tc']:.3f},{values['tc_w']:.3f},{values['tc_u']:.3f},{values['beven']:.3f},{counts['etc']},{values['etc']:.3f},{values['tcc']:.3f},{values['tcc_w']:.3f},{values['tcc_u']:.3f},{values['bevenc']:.3f},{counts['etp']},{values['etp']:.3f},{values['tpc']:.3f},{values['tpc_w']:.3f},{values['tpc_u']:.3f},{values['bevenp']:.3f}")
+        print(f"{symbol},${underlying},{volatility:.3f},{interestRate:.3f},{counts['et']},{values['et']:.3f},{values['tc']:.3f},{values['tc_w']:.3f},{values['tc_u']:.3f},{values['beven']:.3f},{counts['etc']},{values['etc']:.3f},{values['tcc']:.3f},{values['tcc_w']:.3f},{values['tcc_u']:.3f},{values['bevenc']:.3f},{counts['etp']},{values['etp']:.3f},{values['tpc']:.3f},{values['tpc_w']:.3f},{values['tpc_u']:.3f},{values['bevenp']:.3f}")
  
 
 

@@ -25,17 +25,16 @@ def get_options(symbol, option=None, outdir=None):
 #
 # main
 #
-if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+if len(sys.argv) <= 2 or sys.argv[1] in ('-h', '--help'):
     print("usage: python get_all.py [stocklist_file] [out_dir]")
     sys.exit(0)
 
-stocklist_file = "stocks.csv"
-folder = "out"
-if len(sys.argv) > 1:
-    stocklist_file = sys.argv[1]
+stocklist_file = sys.argv[1]
+if not os.path.isfile(stocklist_file):
+    print(f"{stocklist_file} not found")
+    sys.exit(1)
 
-if len(sys.argv) > 2:
-    folder = sys.argv[2]
+folder = sys.argv[2]
 
 if not os.path.isdir(folder):
     os.mkdir(folder)

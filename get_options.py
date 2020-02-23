@@ -131,12 +131,14 @@ class Option:
 
 
 class Candidate:
-    def __init__(self, cs=None, cb=None, ps=None, pb=None, underlying=None):
+    def __init__(self, cs=None, cb=None, ps=None, pb=None, underlying=None, volatility=None, interestRate=None):
         self._cs = cs
         self._cb = cb
         self._ps = ps
         self._pb = pb
         self._underlying = underlying
+        self._volatility = volatility
+        self._interestRate = interestRate
         self._props = {}
         self._prop_ranks = {}   
         self._prop_orders = {}
@@ -314,11 +316,6 @@ class Candidate:
             """
             tc_w = 100 * (tc / width)
             tc_u = 100 * (tc / underlying)
-
-            if tcl > tpl:
-                ml = tcl
-            else:
-                ml = tpl
   
             # set properties
             self._props["tc"] = tc
@@ -405,6 +402,14 @@ class Candidate:
     def underlying(self):
         return self._underlying
 
+    @property
+    def volatility(self):
+        return self._volatility
+
+    @property
+    def interestRate(self):
+        return self._interestRate
+
     def get_props(self):
         return self._props.keys()
 
@@ -465,8 +470,6 @@ class Candidate:
                 return False
 
         tc_u = self._props["tc_u"]
-        et = self._props["et"]
-        tc = self._props["tc"]
         tc_w = self._props["tc_w"]
         
         if tc_u <= MIN_TCU:
@@ -585,6 +588,8 @@ def get_options(option_map, underlying):
     
 def get_contracts(symbol, chains):
     underlying = chains["underlyingPrice"]
+    volatility = chains["volatility"]
+    interestRate = chains["interestRate"]
     putMap = chains["putExpDateMap"]
     callMap = chains["callExpDateMap"]
     
@@ -599,6 +604,8 @@ def get_contracts(symbol, chains):
     filename = f"data/{symbol}-{put_expire_date}.txt"
     with open(filename, 'w') as f:
         print(f"{symbol}, underlying: {underlying:12.3f}", file=f)
+        print(f"{symbol}, volatility: {volatility:12.3f}", file=f)
+        print(f"{symbol}, interestRate: {interestRate:12.3f}", file=f)
         desc =   "#           DESCRIPTION"
         delta =  "       DELTA"
         price =  "       PRICE"
@@ -613,7 +620,13 @@ def get_contracts(symbol, chains):
             desc = option.desc + ','   
             print(f"{desc:40}{option.delta:12.3f},{option.price:12.3f},{option.strike:12.3f}", file=f)
  
-    return {"underlying": underlying, "call": call_options, "put": put_options}   
+    retval = {}
+    retval["underlying"] = underlying
+    retval["volatility"] = volatility
+    retval["interestRate"] = interestRate
+    retval["call"] = call_options
+    retval["put"] = put_options
+    return retval   
 
 def load_from_file(symbol, dt_min, dt_max, useold=False):
     # search data files for valid file to load
@@ -653,6 +666,13 @@ def load_from_file(symbol, dt_min, dt_max, useold=False):
         print("got line:", line)
         n = line.find(":")
         underlying = float(line[(n+1):])
+        line = f.readline().strip()
+        # next line should be volatility
+        n = line.find(":")
+        volatility = float(line[(n+1):])
+        # next line should be interestRate
+        n = line.find(":")
+        interestRate = float(line[(n+1):])
         while line:
             line = f.readline().strip()
             if not line or line[0] == '#':
@@ -674,7 +694,13 @@ def load_from_file(symbol, dt_min, dt_max, useold=False):
                 logging.error(f"unexpected desc: [{desc}]")
 
     logging.info(f"loaded {len(calls)} calls and {len(puts)} puts from file")
-    return {"underlying": underlying, "call": calls, "put": puts}
+    retval = {}
+    retval["underlying"] = underlying
+    retval["interestRate"] = interestRate
+    retval["volatility"] = volatility
+    retval["call"] = calls
+    retval["put"] = puts
+    return retval
         
 
 def prelimination(cs=None, cb=None, ps=None, pb=None):  
@@ -802,6 +828,8 @@ def get_candidates_put(contracts):
         #print(f"put_list.strike: {option.strike:.3f}")
      
     underlying = contracts["underlying"]
+    volatility = contracts["volatility"]
+    interestRate = contracts["interestRate"]
     total_count = 0
     meet_requirements_count = 0
     
@@ -826,7 +854,7 @@ def get_candidates_put(contracts):
 
             if prelimination(ps=ps, pb=pb):
                 total_count += 1
-                candidate = Candidate(ps=ps, pb=pb, underlying=underlying)
+                candidate = Candidate(ps=ps, pb=pb, underlying=underlying, volatility=volatility, interestRate=interestRate)
                        
                 if  True or candidate.meets_requirements():
                     candidates.append(candidate)
@@ -846,6 +874,8 @@ def get_candidates_call(contracts):
     call_list = contracts["call"]
      
     underlying = contracts["underlying"]
+    volatility = contracts["volatility"]
+    interestRate = contracts["interestRate"]
     total_count = 0
     meet_requirements_count = 0
     
@@ -870,7 +900,7 @@ def get_candidates_call(contracts):
 
             if prelimination(cs=cs, cb=cb):
                 total_count += 1
-                candidate = Candidate(cs=cs, cb=cb, underlying=underlying)
+                candidate = Candidate(cs=cs, cb=cb, underlying=underlying, volatility=volatility, interestRate=interestRate)
                        
                 if  True or candidate.meets_requirements():
                     candidates.append(candidate)
@@ -887,6 +917,8 @@ def get_ic_candidates(contracts):
 
     ic_candidates = []
     underlying = contracts["underlying"]
+    volatility = contracts["volatility"]
+    interestRate = contracts["interestRate"]
     
     call_candidates = get_candidates_call(contracts)
 
@@ -917,7 +949,7 @@ def get_ic_candidates(contracts):
        for put_candidate in put_ic_candidates:
            ps = put_candidate.ps
            pb = put_candidate.pb
-           candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
+           candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying, volatility=volatility, interestRate=interestRate)
            if check_ic_requirements(candidate):
                ic_candidates.append(candidate)
                logging.info(f"ic_candidate: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
@@ -1168,8 +1200,15 @@ else:
     print("======================")
     sort_key = ARGS["sort_key"]
     first_candidate = candidates[0]
+    print("first_candidate:", first_candidate)
+    print("underlying:", first_candidate.underlying)
+    print("volatility:", first_candidate.volatility)
     underlying = first_candidate.underlying
-    print(f"{symbol}: {underlying} sorting by: [{sort_key}]")
+    volatility = first_candidate.volatility
+    interestRate = first_candidate.interestRate
+    print(f"{symbol}: underlying: {underlying} sorting by: [{sort_key}]")
+    print(f"{symbol}: volatility: {volatility}")
+    print(f"{symbol}: interestRate: {interestRate}")
 candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
 
 printCandidates(candidates)
