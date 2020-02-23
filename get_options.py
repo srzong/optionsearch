@@ -28,6 +28,29 @@ PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_w", "tpc_w", "tcc_w",
 
 loglevel = logging.INFO # DEBUG or INFO or ERROR
 
+def get_dateString(day_delta=0, from_date=None):
+   
+    if from_date:
+        fields = from_date.split('-')
+        if len(fields) != 3 or len(fields[0]) != 4:
+            print(f"unexpected date format: {from_date}")
+            raise ValueError()
+        year = int(fields[0])
+        month = int(fields[1])
+        day = int(fields[2])
+        dt = datetime(year=year, month=month, day=day)
+        ts = datetime.timestamp(dt)
+    else:
+        ts = time.time()
+    
+
+    if day_delta:
+        seconds_in_day = 24.0 * 60.0 * 60.0
+        ts += seconds_in_day * day_delta
+    dt = datetime.fromtimestamp(ts)
+    dt = datetime(year=dt.year, month=dt.month, day=dt.day)
+    date_str = f"{dt.year}-{dt.month:02}-{dt.day:02}"
+    return date_str
 
 def check_delta_range(delta, option_type=None, c_delta=None):
     if ARGS["skip_delta"]:
@@ -601,7 +624,11 @@ def get_contracts(symbol, chains):
         logging.error("expected put expire date to equal call expire date")
         sys.exit(1)
     # save options to file
-    filename = f"data/{symbol}-{put_expire_date}.txt"
+    today_ds = get_dateString()
+    stock_dir = f"data/{symbol}"
+    if not os.path.isdir(stock_dir):
+        os.mkdir(stock_dir)
+    filename = f"{stock_dir}/{symbol}-{today_ds}.txt"
     with open(filename, 'w') as f:
         print(f"{symbol}, underlying: {underlying:12.3f}", file=f)
         print(f"{symbol}, volatility: {volatility:12.3f}", file=f)
@@ -628,13 +655,19 @@ def get_contracts(symbol, chains):
     retval["put"] = put_options
     return retval   
 
-def load_from_file(symbol, dt_min, dt_max, useold=False):
+def load_from_file(symbol, dt_min=None, dt_max=None, useold=False):
     # search data files for valid file to load
     logging.info(f"load_file_file({symbol}, {dt_min}, {dt_max})")
-    filenames = os.listdir("data")
+    stock_dir = f"data/{symbol}"
+    if not os.path.isdir(stock_dir):
+        return None
+    filenames = os.listdir(stock_dir)
     datafile = None
     logging.info(f"search data files with symbol {symbol} from {dt_min} to {dt_max}")
-
+    if not dt_min:
+        dt_min = datetime.fromisoformat("1900-01-01")
+    if not dt_max:
+        dt_max = datetime.fromisoformat("2100-12-31")
     for filename in filenames:
         if not filename.endswith(".txt"):
             continue
@@ -660,7 +693,7 @@ def load_from_file(symbol, dt_min, dt_max, useold=False):
     underlying = None
     calls = []
     puts = []
-    with open("data/"+datafile+".txt") as f:
+    with open(stock_dir+"/"+datafile+".txt") as f:
         line = f.readline().strip()
         # first line should be like: MMM, underlying:      158.630
         print("got line:", line)
@@ -670,6 +703,7 @@ def load_from_file(symbol, dt_min, dt_max, useold=False):
         # next line should be volatility
         n = line.find(":")
         volatility = float(line[(n+1):])
+        line = f.readline().strip()
         # next line should be interestRate
         n = line.find(":")
         interestRate = float(line[(n+1):])
@@ -1108,17 +1142,18 @@ print("getting symbol:", symbol)
 
 seconds_in_day = 24.0 * 60.0 * 60.0
 exp_target_min = time.time() + 41.0 * seconds_in_day
+exp_target_max = time.time() + 60.0 * seconds_in_day
+
 dt = datetime.fromtimestamp(exp_target_min)
 # get time as of midnight
 dt_min = datetime(year=dt.year, month=dt.month, day=dt.day)
-exp_target_max = time.time() + 60.0 * seconds_in_day
 dt = datetime.fromtimestamp(exp_target_max)
 dt_max = datetime(year=dt.year, month=dt.month, day=dt.day)
     
 contracts = None
 if not reload:
     # see if we can load from previous file
-    contracts = load_from_file(symbol, dt_min, dt_max, useold=useold)
+    contracts = load_from_file(symbol)
 
 if not contracts:
     chains = get_chains(symbol, dt_min, dt_max)
