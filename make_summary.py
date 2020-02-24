@@ -58,7 +58,7 @@ putdir = f"{outdir}/puts/"
 
 dt = datetime.fromtimestamp(time.time())
 print(f"{dt.month}/{dt.day}/{dt.year}")
-print(",,IC,,,,,,,CALL,,,,,PUT,,,,")
+print(",,IC,,,,,,CALL,,,,,PUT,,,,,")
 print("SYMBOL,UNDERLYING,NUM,MAX ET,TC,TC/W,TC/U,BEVEN,NUM,MAX ETC,TCC,TCC/W,TCC/U,BEVENC,NUM,MAX ETP,TPC,TPC/W,TPC/U,BEVENP")
 for symbol in symbols:
     #print(f"got symbol: {symbol}")

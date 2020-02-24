@@ -71,9 +71,3 @@ with open(stocklist_file, "r") as f:
 
 
 print(f"got data for {len(symbols)} symbols")
-cnt = 0
-for symbol in symbols:
-    rc = get_options(symbol, outdir="out")
-    if rc == 0:
-        cnt += 1
-print(f"got candidates for {cnt} symbols")

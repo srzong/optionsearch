@@ -871,14 +871,14 @@ def get_candidates_put(contracts):
         pb = put_list[i]
         logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
         if not check_delta_range(pb.delta, option_type="pb"):
-            logging.info("BAD delta range: put buy delta")
+            logging.info(f"BAD delta range: put buy delta: {pb.delta}")
             continue
         last_strike = pb.strike
         for j in range(i+1, len(put_list)):
             ps = put_list[j]
             logging.info(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
             if not check_delta_range(ps.delta, option_type="ps", c_delta=ps.delta):
-                logging.info("BAD delta range: put sell delta")
+                logging.info(f"BAD delta range: put sell delta: {ps.delta}")
                 continue
             this_strike = ps.strike
             
