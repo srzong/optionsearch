@@ -7,10 +7,15 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165, 0.38)
-CB_DELTA_RANGE = (0.01, 0.37)
-PS_DELTA_RANGE = (-0.38, -0.165)
-PB_DELTA_RANGE = (-0.37, -0.01)
+IC_CS_DELTA_RANGE = (0.165, 0.28)
+IC_CB_DELTA_RANGE = (0.01, 0.27)
+IC_PS_DELTA_RANGE = (-0.29, -0.165)
+IC_PB_DELTA_RANGE = (-0.28, -0.01)
+
+CSR_CS_DELTA_RANGE = (0.165, 0.39)
+CSR_CB_DELTA_RANGE = (0.01, 0.37)
+PSR_PS_DELTA_RANGE = (-0.42, -0.165)
+PSR_PB_DELTA_RANGE = (-0.40, -0.01)
 
 MIN_ET = 0
 MIN_TC = 0
@@ -55,6 +60,7 @@ def get_dateString(day_delta=0, from_date=None):
     date_str = f"{dt.year}-{dt.month:02}-{dt.day:02}"
     return date_str
 
+"""
 def check_delta_range(delta, option_type=None, c_delta=None):
     if ARGS["skip_delta"]:
         return True
@@ -89,16 +95,16 @@ def check_delta_range(delta, option_type=None, c_delta=None):
         sys.exit(1)
     
     logging.debug(f"check_delta_range: delta= {delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
-    """
-    if ubnd < lbnd:
-        logging.warning("expected delta check upper bound to be greater than lower bound")
-        return False
-    """
+    
+    #if ubnd < lbnd:
+    #    logging.warning("expected delta check upper bound to be greater than lower bound")
+    #    return False
+    
     if lbnd <= delta and delta <= ubnd:
         return True
 
     return False
-
+"""
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -613,7 +619,6 @@ def get_options(option_map, underlying):
             for option in options:
                 description = option["description"]
                 print("description:", description)
-                delta = option["delta"]
                 strike = float(strikePrice)
                 if descIsPut(description):
                     if underlying <= strike:
@@ -627,7 +632,7 @@ def get_options(option_map, underlying):
                     logging.info(f"unexpected description: {description}")
                     sys.exit(1)
                  
-                price = (option["bid"] + option["ask"])/2.0
+                #price = (option["bid"] + option["ask"])/2.0
                 item = Option(option)
 
                 results.append(item)
@@ -643,7 +648,7 @@ def get_contracts(symbol, chains):
     underlying = chains["underlyingPrice"]
     volatility = chains["volatility"]
     interestRate = chains["interestRate"]
-    daysToExpiration = chains["daysToExpiration"]
+    #daysToExpiration = chains["daysToExpiration"]
     putMap = chains["putExpDateMap"]
     callMap = chains["callExpDateMap"]
     
@@ -660,7 +665,7 @@ def get_contracts(symbol, chains):
     if not os.path.isdir(stock_dir):
         os.mkdir(stock_dir)
     filename = f"{stock_dir}/{symbol}-{today_ds}.txt"
-    run_time = datetime.fromtimestamp(time.time())
+    #run_time = datetime.fromtimestamp(time.time())
     with open(filename, 'w') as f:
         print(f"{symbol}, runtime: {dt.year}/{dt.month:02}/{dt.day:02} {dt.hour:02}:{dt.minute:02}")
         print(f"{symbol}, underlying: {underlying:12.3f}", file=f)
@@ -912,43 +917,24 @@ def check_ic_preq(candidate):
     logging.debug("check_ic_preq True")
     return True
 
-def get_ps(cs, ps, ps_1, ps1, underlying):
-    logging.info(f"----ps: {ps.desc} delta: {ps.delta}")
-    logging.info(f"get_ps -- cs: {cs} ps: {ps} ps_1: {ps_1}  ps1: {ps1}  underlying: {underlying}")
-    logging.info(f"ps strike: {ps.strike} ps+1.strike: { ps1.strike}")
-    logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
 
-    if (ps_1.strike < 2*underlying - cs.strike and 2*underlying - cs.strike <= ps.strike) or (ps.strike < 2*underlying - cs.strike and 2*underlying - cs.strike < ps1.strike):
-        logging.info(f"picked by strike: ps.strike = {ps.strike} cs.strike = { cs.strike}")
-        return True
-
-    logging.info(f"delta ??? cs.delta = { cs.delta} ps_1.delta = {ps_1.delta} ps.delta = {ps.delta} ps1.delta = { ps1.delta}")
-
-    if (-ps_1.delta < cs.delta and cs.delta <= -ps.delta) or (-ps.delta < cs.delta and cs.delta < -ps1.delta):
-        logging.info(f"picked by delta: ps.delta = {ps.delta} cs.delta = { cs.delta}")
-        logging.info(f"ps_1.delta = {ps_1.delta} ps1.delta = { ps1.delta}")
-        return True
-
-    if not check_delta_range(ps.delta, option_type="ps", c_delta=cs.delta):
-        logging.info("BAD delta range: put sell delta")
-        return False
-
-    logging.info("get_ps returning True")
-    return True
-
-def get_candidates_put(contracts):
+def get_candidates_put(contracts, ps_range=None, pb_range=None):
     # set default sort key
     if "sort_key" not in ARGS:
         ARGS["sort_key"] = "etp"
     candidates = []
     put_list = contracts["put"]
+    if ps_range is None:
+        ps_range = PSR_PS_DELTA_RANGE
+    if pb_range is None:
+        pb_range = PSR_PB_DELTA_RANGE
 
     pb_list = []
     for i in range(len(put_list)-1):
         pb = put_list[i]
         logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
        
-        if not check_delta_range(pb.delta, option_type="pb"):
+        if pb.delta < pb_range[0] or pb.delta > pb_range[1]:
             logging.info(f"BAD delta range: put buy delta: {pb.delta}")
         else:
             pb_list.append(pb)
@@ -958,7 +944,7 @@ def get_candidates_put(contracts):
         ps = put_list[i]
         logging.info(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
             
-        if not check_delta_range(ps.delta, option_type="ps", c_delta=ps.delta):
+        if ps.delta < ps_range[0] or ps.delta > ps_range[1]:
             logging.info(f"BAD delta range: put sell delta: {ps.delta}")
         else:
             ps_list.append(ps)
@@ -1005,19 +991,23 @@ def get_candidates_put(contracts):
     return candidates
 
 
-def get_candidates_call(contracts):
+def get_candidates_call(contracts, cs_range=None, cb_range=None):
     # set default sort key
     if "sort_key" not in ARGS:
         ARGS["sort_key"] = "etc"
     candidates = []
     call_list = contracts["call"]
+    if cs_range is None:
+        cs_range = CSR_CS_DELTA_RANGE
+    if cb_range is None:
+        cb_range = CSR_CB_DELTA_RANGE
 
     cs_list = []
     for i in range(len(call_list)-1):
         cs = call_list[i]
         logging.info(f"check--------cs: strike:{cs.strike}, delta:{cs.delta}, price:{cs.price}")
        
-        if not check_delta_range(cs.delta, option_type="cs"):
+        if  cs.delta < cs_range[0] or cs.delta > cs_range[1]:
             logging.info(f"BAD delta range: call sell delta: {cs.delta}")
         else:
             cs_list.append(cs)
@@ -1027,7 +1017,7 @@ def get_candidates_call(contracts):
         cb = call_list[i]
         logging.info(f"check------cb: strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
             
-        if not check_delta_range(cb.delta, option_type="cb", c_delta=cb.delta):
+        if cb.delta < cb_range[0] or cb.delta > cb_range[1]:
             logging.info(f"BAD delta range: call but delta: {cb.delta}")
         else:
             cb_list.append(cb)
@@ -1079,14 +1069,14 @@ def get_ic_candidates(contracts):
     interestRate = contracts["interestRate"]
     expireDate = contracts["expireDate"]
     
-    call_candidates = get_candidates_call(contracts)
+    call_candidates = get_candidates_call(contracts, cs_range=IC_CS_DELTA_RANGE, cb_range=IC_CB_DELTA_RANGE)
 
     call_ic_candidates = []
     for candidate in call_candidates:
         if check_ic_preq(candidate):
             call_ic_candidates.append(candidate)
 
-    put_candidates = get_candidates_put(contracts)
+    put_candidates = get_candidates_put(contracts, ps_range=IC_PS_DELTA_RANGE, pb_range=IC_PB_DELTA_RANGE)
     put_ic_candidates = []
     for candidate in put_candidates:
         if check_ic_preq(candidate):
@@ -1115,96 +1105,7 @@ def get_ic_candidates(contracts):
 
     return ic_candidates
 
-
-def get_candidates_put_and_call(contracts):
-    if "sort_key" not in ARGS:
-        ARGS["sort_key"] = "et"
-    candidates = []
-    call_list = contracts["call"]
-    put_list = contracts["put"]
-
-    if call_list and put_list:
-        logging.info(f"get_candidates - calls: {len(call_list)} puts: {len(put_list)}")
-    elif call_list:
-        logging.info(f"get_candidates - calls: {len(call_list)}") 
-    elif put_list:
-        logging.info(f"get_candidates - puts: {len(put_list)}")
-    else:
-        logging.error(f"get_candidates - unexpected contracts")
-        sys.exit(1)
-
-    underlying = contracts["underlying"]
-    total_count = 0
-    meet_requirements_count = 0
-    
-    for i in range(len(call_list) - 1):
-        cs = call_list[i]
-        logging.info(f"--------cs: {cs.desc}, strike:{cs.strike}, price:{cs.price}, delta:{cs.delta}")
-        if not check_delta_range(cs.delta, option_type="cs"):
-            logging.info("BAD delta range: call sell delta")
-            continue
-        last_strike = cs.strike
-        for j in range(i+1, len(call_list)):
-            cb = call_list[j]
-            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, price:{cb.price}, delta:{cb.delta}")
-            if not check_delta_range(cb.delta, option_type="cb", c_delta=cs.delta):
-                logging.info("BAD delta range: call buy delta")
-                continue
-            if not prelimination(cs=cs, cb=cb):
-                continue
-            this_strike = cb.strike
-            
-            if this_strike <= last_strike:
-                logging.DEBUG(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
-                sys.exit(1)
-            
-            logging.info(f"search by k in {2}, {len(put_list) - 1}")
-            for k in range(2, len(put_list) - 1):
-                logging.info(f"---search by k in {k}")
-                ps = put_list[k]
-                if not get_ps(cs, ps, put_list[k-1], put_list[k+1], underlying):
-                    logging.info(f"BAD ps: {ps.desc}")
-                    continue
-                
-                logging.info(f"----ps: {ps.desc} strike:{ps.strike}, price:{ps.price}, delta:{ps.delta}")
-                """
-                logging.info(f"ps strike: {ps.strike} ps+1.strike: { put_list[k+1].strike}")
-                logging.info(f"2underlying: {2*underlying-cs.strike} cs.strike: { cs.strike}")
-
-                if (not ps.strike <= 2*underlying - cs.strike < put_list[k+1].strike) and (not put_list[k-1].strike <= 2*underlying - cs.strike < ps.strike):
-                    if not check_delta_range(ps.delta, option_type="ps", c_delta=cs.delta):
-                        logging.info("BAD bound: put sell delta")
-                        continue
-                """
-                last_strike = ps.strike
-                for l in range(0, k):
-                    pb = put_list[l]
-                                    
-                    logging.info(f"----ps: {ps.desc} strike:{ps.strike}, price:{ps.delta}, delta:{ps.price}")
-
-                    logging.info(f"--pb: {pb.desc} strike:{pb.strike}, price:{pb.delta}, delta:{pb.price}")
-                    if not check_delta_range(pb.delta, option_type="pb", c_delta=ps.delta):
-                        logging.info("BAD bound: put buy delta")
-                        continue
-                    this_strike = pb.strike
-                    if this_strike >= last_strike:
-                        logging.info(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
-                        sys.exit(1)
-
-                    logging.info(f"pre IC: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
-                    if prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
-                        candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
-                        total_count += 1
-                        if candidate.meets_requirements():
-                            candidates.append(candidate)
-                            meet_requirements_count += 1
-
-    print ("----------------------")
-    print("total ic candidates:", total_count)
-    print("meet req candidates:", meet_requirements_count)                    
-    return candidates
-        
-
+ 
 def print_usage():
     print("usage: python get_options.py [--skip-delta] [--sort prop] [--calls|--puts] [--reload|--useold|--dataonly] SYM")
 
@@ -1325,7 +1226,6 @@ elif "put" not in option_types:
     candidates = get_candidates_call(contracts)
     print("got", len(candidates), "call candidates")
 else:
-    #candidates = get_candidates_put_and_call(contracts)
     candidates = get_ic_candidates(contracts)
     print("got", len(candidates), "IC candidates")
  
