@@ -2,8 +2,12 @@ import subprocess
 import sys
 import os
 
-def get_options(symbol, option=None, outdir=None):
-    args = ["python", "get_options.py"]  #, "--reload"]
+def get_options(symbol, option=None, outdir=None, reload=False):
+    args = ["python", "get_options.py"] 
+
+    if reload:
+        args.append("--reload") 
+
     if option:
         args.append(option)
     args.append(symbol)
@@ -26,15 +30,21 @@ def get_options(symbol, option=None, outdir=None):
 # main
 #
 if len(sys.argv) <= 2 or sys.argv[1] in ('-h', '--help'):
-    print("usage: python get_all.py [stocklist_file] [out_dir]")
+    print("usage: python get_all.py [--reload] [stocklist_file] [out_dir]")
     sys.exit(0)
 
-stocklist_file = sys.argv[1]
+argnum = 1
+reload = False
+if sys.argv[argnum] == "--reload":
+    reload = True
+    argnum += 1
+stocklist_file = sys.argv[argnum]
+argnum += 1
 if not os.path.isfile(stocklist_file):
     print(f"{stocklist_file} not found")
     sys.exit(1)
 
-folder = sys.argv[2]
+folder = sys.argv[argnum]
 
 if not os.path.isdir(folder):
     os.mkdir(folder)
@@ -53,21 +63,23 @@ with open(stocklist_file, "r") as f:
             line = f.readline()
             continue
         print(symbol)
-
+        """
         # do ic
         outdir = folder + "/ic"
-        rc = get_options(symbol, outdir=outdir)
+        rc = get_options(symbol, outdir=outdir, reload=reload)
         if rc == 0:
             symbols.append(symbol)    
-        
+        """
         # do puts
         outdir = folder + "/puts"
-        rc = get_options(symbol, option="--puts", outdir=outdir) 
+        rc = get_options(symbol, option="--puts", outdir=outdir, reload=reload) 
         #print(f"{cnt}: {len(fields)}")
         
+        # do calls
         outdir = folder + "/calls"
-        rc = get_options(symbol, option="--calls", outdir=outdir)
+        rc = get_options(symbol, option="--calls", outdir=outdir, reload=reload)
+        
         line = f.readline()
-
+        
 
 print(f"got data for {len(symbols)} symbols")

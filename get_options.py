@@ -7,14 +7,14 @@ import requests
 
 ARGS = {}
 
-CS_DELTA_RANGE = (0.165, 0.32)
-CB_DELTA_RANGE = (0.01, 0.30)
-PS_DELTA_RANGE = (-0.32, -0.165)
-PB_DELTA_RANGE = (-0.30, -0.01)
+CS_DELTA_RANGE = (0.165, 0.38)
+CB_DELTA_RANGE = (0.01, 0.37)
+PS_DELTA_RANGE = (-0.38, -0.165)
+PB_DELTA_RANGE = (-0.37, -0.01)
 
 MIN_ET = 0
 MIN_TC = 0
-MIN_TCW = 0
+MIN_TCW = 0.334
 MIN_TCU = 0
 
 SELL_SYMMETRY = 1 #0.12
@@ -25,8 +25,11 @@ WIDTH_SYMMETRY = 10 #10, no use
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
 PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_w", "tpc_w", "tcc_w", "tc_u", "tpc_u", "tcc_u", "beven", "bevenp", "bevenc"]
-
-loglevel = logging.INFO # DEBUG or INFO or ERROR
+OPTION_PROPS = ["description", "symbol", "putCall", "strikePrice", "bid", "ask", "last", "mark", "bidAskSize",
+    "highPrice", "lowPrice", "openPrice", "closePrice", "totalVolume", 
+    "netChange", "volatility", "delta", "gamma", "theta", "vega", "openInterest", "timeValue",
+    "theoreticalOptionValue", "daysToExpiration"]
+loglevel = logging.DEBUG # DEBUG or INFO or ERROR
 
 def get_dateString(day_delta=0, from_date=None):
    
@@ -125,36 +128,49 @@ def descIsPut(desc):
         return False
  
 
-class Option:            
-    def __init__(self, desc=None, delta=None, strike=None, price=None):
-        self._desc = desc
-        self._delta = delta
-        self._strike = strike
-        self._price = price
+class Option:     
+        
+    def __init__(self, propmap):
+        self._propmap = propmap
 
     def __str__(self):
-        s = f"{self._desc} -- delta: {self._delta:.2f} price: {self._price:.2f} strike: {self._strike}"
+        s = f"{self.desc} -- delta: {self.delta:.2f} price: {self.price:.2f} strike: {self.strike}"
         return s
 
     @property
     def desc(self):
-        return self._desc
+        return self._propmap["description"]
 
     @property
     def delta(self):
-        return self._delta
+        return self._propmap["delta"]
 
     @property
     def price(self):
-        return self._price
-
+        return self._propmap["mark"]
+ 
     @property
     def strike(self):
-        return self._strike
+        return self._propmap["strikePrice"]
+
+    def isProp(self, propname):
+        if propname in OPTION_PROPS and propname in self._propmap:
+            return True
+        else:
+            return False
+    def getProp(self, propname):
+        return self._propmap[propname]
+
+    def getPropNames(self):
+        propnames = []
+        for propname in OPTION_PROPS:
+            if propname in self._propmap:
+                propnames.append(propname)
+        return propnames
 
 
 class Candidate:
-    def __init__(self, cs=None, cb=None, ps=None, pb=None, underlying=None, volatility=None, interestRate=None):
+    def __init__(self, cs=None, cb=None, ps=None, pb=None, underlying=None, volatility=None, interestRate=None, expireDate=None):
         self._cs = cs
         self._cb = cb
         self._ps = ps
@@ -162,6 +178,7 @@ class Candidate:
         self._underlying = underlying
         self._volatility = volatility
         self._interestRate = interestRate
+        self._expireDate = expireDate
         self._props = {}
         self._prop_ranks = {}   
         self._prop_orders = {}
@@ -288,7 +305,10 @@ class Candidate:
         logging.info("******************")
         
         tc = csp - cbp + psp - pbp
-        width = ((cbs - css) + (pss - pbs)) * 0.5
+        #width = ((cbs - css) + (pss - pbs)) * 0.5
+        width = cbs - css
+        if cbs-css < psp-pbp:
+            width = psp - pbp
         symm = csd + cbd + psd + pbd
 
         logging.info(f"tc: {tc:.3f}")
@@ -360,6 +380,11 @@ class Candidate:
         print() 
         if self._cs and self._cb and self._ps and self._pb:
             print(f"IC: {self._cs.strike}/{self._cb.strike}/{self._ps.strike}/{self._pb.strike}" )
+        elif self._cs and self._cb:
+            print(f"CSpd: {self._cs.strike}/{self._cb.strike}" )
+        elif self._ps and self._pb:
+            print(f"PSpd: {self._ps.strike}/{self._pb.strike}" )
+
         if self._cs:
             print("cs:", self._cs)
         if self._cb:
@@ -433,6 +458,10 @@ class Candidate:
     def interestRate(self):
         return self._interestRate
 
+    @property
+    def expireDate(self):
+        return self._expireDate
+
     def get_props(self):
         return self._props.keys()
 
@@ -496,7 +525,7 @@ class Candidate:
         tc_w = self._props["tc_w"]
         
         if tc_u <= MIN_TCU:
-            logging.info(f"BAD tcu: {tc_u}")
+            logging.info(f"BAD tcu: {tc_u} < {MIN_TCW}")
             return False
         """
         if self._ps.strike - self._pb.strike <= tc:
@@ -597,8 +626,9 @@ def get_options(option_map, underlying):
                 else:
                     logging.info(f"unexpected description: {description}")
                     sys.exit(1)
+                 
                 price = (option["bid"] + option["ask"])/2.0
-                item = Option(desc=description, delta=delta, strike=strike, price=price)
+                item = Option(option)
 
                 results.append(item)
     
@@ -613,6 +643,7 @@ def get_contracts(symbol, chains):
     underlying = chains["underlyingPrice"]
     volatility = chains["volatility"]
     interestRate = chains["interestRate"]
+    daysToExpiration = chains["daysToExpiration"]
     putMap = chains["putExpDateMap"]
     callMap = chains["callExpDateMap"]
     
@@ -629,28 +660,45 @@ def get_contracts(symbol, chains):
     if not os.path.isdir(stock_dir):
         os.mkdir(stock_dir)
     filename = f"{stock_dir}/{symbol}-{today_ds}.txt"
+    run_time = datetime.fromtimestamp(time.time())
     with open(filename, 'w') as f:
+        print(f"{symbol}, runtime: {dt.year}/{dt.month:02}/{dt.day:02} {dt.hour:02}:{dt.minute:02}")
         print(f"{symbol}, underlying: {underlying:12.3f}", file=f)
         print(f"{symbol}, volatility: {volatility:12.3f}", file=f)
         print(f"{symbol}, interestRate: {interestRate:12.3f}", file=f)
-        desc =   "#           DESCRIPTION"
-        delta =  "       DELTA"
-        price =  "       PRICE"
-        strike = "      STRIKE"
+        print(f"{symbol}, expireDate: {put_expire_date}", file=f)
 
-        print(f"{desc:40}{delta:12} {price:12} {strike:12}", file=f)
+        header = "#           description,                 "
+        for propname in OPTION_PROPS[1:]:
+            header += f"{propname:>12},"
+
+        print(header, file=f)
+
+        options = []
+        for option in put_options:
+            options.append(option)
+        for option in call_options:
+            options.append(option)
        
-        for option in put_options:   
-            desc = option.desc + ',' 
-            print(f"{desc:40}{option.delta:12.3f},{option.price:12.3f},{option.strike:12.3f}", file=f)
-        for option in call_options:  
-            desc = option.desc + ','   
-            print(f"{desc:40}{option.delta:12.3f},{option.price:12.3f},{option.strike:12.3f}", file=f)
- 
+        for option in options:   
+            textline = f"{option.desc:40},"
+            for propname in OPTION_PROPS[1:]:
+                propval = option.getProp(propname)
+                print(f"got propname: {propname} propval: {propval}")
+                if isinstance(propval, float):
+                    textline += f"{propval:12.3f},"
+                elif isinstance(propval, str):
+                    textline += f"{propval[:12]:>12},"
+                else:
+                    textline += f"{propval:>12},"
+
+            print(textline, file=f)
+         
     retval = {}
     retval["underlying"] = underlying
     retval["volatility"] = volatility
     retval["interestRate"] = interestRate
+    retval["expireDate"] = put_expire_date
     retval["call"] = call_options
     retval["put"] = put_options
     return retval   
@@ -696,7 +744,6 @@ def load_from_file(symbol, dt_min=None, dt_max=None, useold=False):
     with open(stock_dir+"/"+datafile+".txt") as f:
         line = f.readline().strip()
         # first line should be like: MMM, underlying:      158.630
-        print("got line:", line)
         n = line.find(":")
         underlying = float(line[(n+1):])
         line = f.readline().strip()
@@ -707,31 +754,68 @@ def load_from_file(symbol, dt_min=None, dt_max=None, useold=False):
         # next line should be interestRate
         n = line.find(":")
         interestRate = float(line[(n+1):])
+        line = f.readline().strip()
+        # next line should be expireDate
+        n = line.find(":")
+        expireDate = line[(n+1):].strip()
+        propnames = []
+        # next line should be headers
+        line = f.readline().strip()
+        if line[0] != '#':
+            logging.error(f"expected header line but got: {line}")
+            sys.exit(1)
+        line = line[1:]
+        fields = line.split(',')
+        for field in fields:
+            propnames.append(field.strip())
+        
+
         while line:
             line = f.readline().strip()
-            if not line or line[0] == '#':
+            if not line: 
                 continue
+
             fields = line.split(',')
-            if len(fields) != 4:
+            if len(fields) != len(propnames):
                 logging.error(f"unexpected line: {line}")
                 continue
-            desc = fields[0]
-            delta = float(fields[1])
-            price = float(fields[2])
-            strike = float(fields[3])
-            option = Option(desc=desc, delta=delta, strike=strike, price=price)
-            if descIsPut(desc):
+            optionprops = {}
+            for i in range(len(fields)):
+                propname = propnames[i]
+                field = fields[i].strip()
+                if len(field) == 0:
+                    propval = ""
+                else:
+                    field_type = "int"
+                    for ch in field:
+                        if ch == '.' and field_type == "int":
+                            field_type = "float"
+                        elif ch == '-':
+                            pass # ignore, could be neg sign
+                        elif not ch.isdigit():
+                            field_type = "str"
+                    if field_type == "int":
+                        propval = int(field)
+                    elif field_type == "float":
+                        propval = float(field)
+                    else:
+                        propval = field  # just string
+                optionprops[propname] = propval
+                
+            option = Option(optionprops)
+            if descIsPut(option.desc):
                 puts.append(option)
-            elif descIsCall(desc):
+            elif descIsCall(option.desc):
                 calls.append(option)
             else:
-                logging.error(f"unexpected desc: [{desc}]")
+                logging.error(f"unexpected desc: [{option.desc}]")
 
     logging.info(f"loaded {len(calls)} calls and {len(puts)} puts from file")
     retval = {}
     retval["underlying"] = underlying
     retval["interestRate"] = interestRate
     retval["volatility"] = volatility
+    retval["expireDate"] = expireDate
     retval["call"] = calls
     retval["put"] = puts
     return retval
@@ -858,28 +942,49 @@ def get_candidates_put(contracts):
         ARGS["sort_key"] = "etp"
     candidates = []
     put_list = contracts["put"]
+
+    pb_list = []
+    for i in range(len(put_list)-1):
+        pb = put_list[i]
+        logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
+       
+        if not check_delta_range(pb.delta, option_type="pb"):
+            logging.info(f"BAD delta range: put buy delta: {pb.delta}")
+        else:
+            pb_list.append(pb)
+
+    ps_list = []
+    for i in range(len(put_list)):
+        ps = put_list[i]
+        logging.info(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
+            
+        if not check_delta_range(ps.delta, option_type="ps", c_delta=ps.delta):
+            logging.info(f"BAD delta range: put sell delta: {ps.delta}")
+        else:
+            ps_list.append(ps)
+
+    
+           
     #for option in put_list:
         #print(f"put_list.strike: {option.strike:.3f}")
      
     underlying = contracts["underlying"]
     volatility = contracts["volatility"]
     interestRate = contracts["interestRate"]
+    expireDate = contracts["expireDate"]
     total_count = 0
     meet_requirements_count = 0
     
-    for i in range(len(put_list) - 1):
-        pb = put_list[i]
+    for i in range(len(pb_list)):
+        pb = pb_list[i]
         logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
-        if not check_delta_range(pb.delta, option_type="pb"):
-            logging.info(f"BAD delta range: put buy delta: {pb.delta}")
-            continue
         last_strike = pb.strike
-        for j in range(i+1, len(put_list)):
+        for j in range(len(put_list)):
             ps = put_list[j]
-            logging.info(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
-            if not check_delta_range(ps.delta, option_type="ps", c_delta=ps.delta):
-                logging.info(f"BAD delta range: put sell delta: {ps.delta}")
+            if pb.strike >= ps.strike:
+                logging.debug(f"skip pb.strike > ps.strike  {pb.strike}>{ps.strike}")
                 continue
+            logging.debug(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
             this_strike = ps.strike
             
             if this_strike <= last_strike:
@@ -888,9 +993,9 @@ def get_candidates_put(contracts):
 
             if prelimination(ps=ps, pb=pb):
                 total_count += 1
-                candidate = Candidate(ps=ps, pb=pb, underlying=underlying, volatility=volatility, interestRate=interestRate)
+                candidate = Candidate(ps=ps, pb=pb, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
                        
-                if  True or candidate.meets_requirements():
+                if candidate.meets_requirements():
                     candidates.append(candidate)
                     meet_requirements_count += 1        
 
@@ -906,26 +1011,45 @@ def get_candidates_call(contracts):
         ARGS["sort_key"] = "etc"
     candidates = []
     call_list = contracts["call"]
+
+    cs_list = []
+    for i in range(len(call_list)-1):
+        cs = call_list[i]
+        logging.info(f"check--------cs: strike:{cs.strike}, delta:{cs.delta}, price:{cs.price}")
+       
+        if not check_delta_range(cs.delta, option_type="cs"):
+            logging.info(f"BAD delta range: call sell delta: {cs.delta}")
+        else:
+            cs_list.append(cs)
+
+    cb_list = []
+    for i in range(len(call_list)):
+        cb = call_list[i]
+        logging.info(f"check------cb: strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
+            
+        if not check_delta_range(cb.delta, option_type="cb", c_delta=cb.delta):
+            logging.info(f"BAD delta range: call but delta: {cb.delta}")
+        else:
+            cb_list.append(cb)
      
     underlying = contracts["underlying"]
     volatility = contracts["volatility"]
     interestRate = contracts["interestRate"]
+    expireDate = contracts["expireDate"]
     total_count = 0
     meet_requirements_count = 0
     
-    for i in range(len(call_list) - 1):
-        cs = call_list[i]
+    for i in range(len(cs_list) - 1):
+        cs = cs_list[i]
         logging.info(f"--------cs: strike:{cs.strike}, delta:{cs.delta}, price:{cs.price}")
-        if not check_delta_range(cs.delta, option_type="cs"):
-            logging.info("BAD delta range: call sell delta")
-            continue
+    
         last_strike = cs.strike
-        for j in range(i+1, len(call_list)):
-            cb = call_list[j]
-            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
-            if not check_delta_range(cb.delta, option_type="cb", c_delta=cs.delta):
-                logging.info("BAD delta range: call buy delta")
+        for j in range(len(cb_list)):
+            cb = cb_list[j]
+            if cb.strike <= cs.strike:
                 continue
+            logging.info(f"------cb: {cb.desc} strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
+            
             this_strike = cb.strike
             
             if this_strike <= last_strike:
@@ -934,9 +1058,9 @@ def get_candidates_call(contracts):
 
             if prelimination(cs=cs, cb=cb):
                 total_count += 1
-                candidate = Candidate(cs=cs, cb=cb, underlying=underlying, volatility=volatility, interestRate=interestRate)
+                candidate = Candidate(cs=cs, cb=cb, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
                        
-                if  True or candidate.meets_requirements():
+                if candidate.meets_requirements():
                     candidates.append(candidate)
                     meet_requirements_count += 1
 
@@ -953,6 +1077,7 @@ def get_ic_candidates(contracts):
     underlying = contracts["underlying"]
     volatility = contracts["volatility"]
     interestRate = contracts["interestRate"]
+    expireDate = contracts["expireDate"]
     
     call_candidates = get_candidates_call(contracts)
 
@@ -983,7 +1108,7 @@ def get_ic_candidates(contracts):
        for put_candidate in put_ic_candidates:
            ps = put_candidate.ps
            pb = put_candidate.pb
-           candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying, volatility=volatility, interestRate=interestRate)
+           candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
            if check_ic_requirements(candidate):
                ic_candidates.append(candidate)
                logging.info(f"ic_candidate: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
@@ -1070,7 +1195,7 @@ def get_candidates_put_and_call(contracts):
                     if prelimination(cs=cs, cb=cb, pb=pb, ps=ps):
                         candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying)
                         total_count += 1
-                        if  candidate.meets_requirements():
+                        if candidate.meets_requirements():
                             candidates.append(candidate)
                             meet_requirements_count += 1
 
@@ -1081,7 +1206,7 @@ def get_candidates_put_and_call(contracts):
         
 
 def print_usage():
-    print("usage: python get_options.py [--skip-delta] [--sort prop] [--calls|--puts] [--reload|--useold] SYM")
+    print("usage: python get_options.py [--skip-delta] [--sort prop] [--calls|--puts] [--reload|--useold|--dataonly] SYM")
 
 
 #
@@ -1094,6 +1219,7 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
 symbols = []
 reload = False
 useold = False
+dataonly = False
 ARGS["skip_delta"] = False
 ARGS["option_type"] = "ALL"  # or CALLS_ONLY or PUTS_ONLY
 
@@ -1120,6 +1246,8 @@ for argn in range(1, len(sys.argv)):
             reload = True
         elif argval == "--useold":
             useold = True    
+        elif argval == "--dataonly":
+            dataonly = True
         elif argval == "--calls":
             ARGS["option_type"] = "CALLS_ONLY"
         elif argval == "--puts":
@@ -1134,6 +1262,8 @@ for argn in range(1, len(sys.argv)):
 if not symbols:
     print_usage()
     sys.exit(1)
+if dataonly:
+    reload = True
 if reload and useold:
     print_usage()
     sys.exit(1)
@@ -1162,6 +1292,10 @@ if not contracts:
         sys.exit(1)
     contracts = get_contracts(symbol, chains)
 
+    if dataonly:
+        print("done!")
+        sys.exit(0)
+
 
 # contracts: {"underlying": underlying, "call": calls, "put": puts}
 
@@ -1186,13 +1320,16 @@ for k in option_types:
 
 if "call" not in option_types:
     candidates = get_candidates_put(contracts)
+    print("got", len(candidates), "put candidates")
 elif "put" not in option_types:
     candidates = get_candidates_call(contracts)
+    print("got", len(candidates), "call candidates")
 else:
     #candidates = get_candidates_put_and_call(contracts)
     candidates = get_ic_candidates(contracts)
+    print("got", len(candidates), "IC candidates")
  
-print("got", len(candidates), "IC candidates")
+
 print("======================")
 
 propnames = set()
@@ -1235,15 +1372,17 @@ else:
     print("======================")
     sort_key = ARGS["sort_key"]
     first_candidate = candidates[0]
-    print("first_candidate:", first_candidate)
-    print("underlying:", first_candidate.underlying)
-    print("volatility:", first_candidate.volatility)
+    #print("first_candidate:", first_candidate)
+    #print("underlying:", first_candidate.underlying)
+    #print("volatility:", first_candidate.volatility)
     underlying = first_candidate.underlying
     volatility = first_candidate.volatility
     interestRate = first_candidate.interestRate
+    expireDate = first_candidate.expireDate
     print(f"{symbol}: underlying: {underlying} sorting by: [{sort_key}]")
     print(f"{symbol}: volatility: {volatility}")
     print(f"{symbol}: interestRate: {interestRate}")
+    print(f"{symbol}: expireDate: {expireDate}")
 candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
 
 printCandidates(candidates)
