@@ -32,10 +32,12 @@ if len(sys.argv) <= 2 or sys.argv[1] in ('-h', '--help'):
     sys.exit(0)
 
 argnum = 1
+
 refresh_option = None   # or "--reload" or "--useold" or "--dataonly"
 if sys.argv[argnum] in ("--reload", "--useold", "--dataonly"):
-    reresh_otion = sys.argv[argnum]
+    refresh_option = sys.argv[argnum]
     argnum += 1
+
 stocklist_file = sys.argv[argnum]
 argnum += 1
 if not os.path.isfile(stocklist_file):

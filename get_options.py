@@ -12,14 +12,14 @@ IC_CB_DELTA_RANGE = (0.01, 0.27)
 IC_PS_DELTA_RANGE = (-0.29, -0.165)
 IC_PB_DELTA_RANGE = (-0.28, -0.01)
 
-CSR_CS_DELTA_RANGE = (0.165, 0.39)
-CSR_CB_DELTA_RANGE = (0.01, 0.37)
-PSR_PS_DELTA_RANGE = (-0.42, -0.165)
-PSR_PB_DELTA_RANGE = (-0.40, -0.01)
+CSR_CS_DELTA_RANGE = (0.165, 0.36)
+CSR_CB_DELTA_RANGE = (0.01, 0.34)
+PSR_PS_DELTA_RANGE = (-0.40, -0.165)
+PSR_PB_DELTA_RANGE = (-0.38, -0.01)
 
 MIN_ET = 0
 MIN_TC = 0
-MIN_TCW = 0.334
+MIN_TCW = 33.4
 MIN_TCU = 0
 
 SELL_SYMMETRY = 1 #0.12
@@ -29,12 +29,12 @@ WIDTH_SYMMETRY = 10 #10, no use
 # SORT_KEYS = ("et", "ml", "width", "tc_w","tc", "symm", "tc_u", "tcc", "tcc_w")
 
 NON_REVERSE_SORT = {"width", "ml", "symm"}
-PRINT_PROPS = ["et", "etp", "etc", "tc", "tpc", "tcc", "tc_w", "tpc_w", "tcc_w", "tc_u", "tpc_u", "tcc_u", "beven", "bevenp", "bevenc"]
+PRINT_PROPS = ["et", "etp", "etc", "tc", "tcp", "tcc", "tc_w", "tcp_w", "tcc_w", "tc_u", "tcp_u", "tcc_u", "beven", "bevenp", "bevenc"]
 OPTION_PROPS = ["description", "symbol", "putCall", "strikePrice", "bid", "ask", "last", "mark", "bidAskSize",
     "highPrice", "lowPrice", "openPrice", "closePrice", "totalVolume", 
     "netChange", "volatility", "delta", "gamma", "theta", "vega", "openInterest", "timeValue",
     "theoreticalOptionValue", "daysToExpiration"]
-loglevel = logging.DEBUG # DEBUG or INFO or ERROR
+loglevel = logging.INFO # DEBUG or INFO or ERROR
 
 def get_dateString(day_delta=0, from_date=None):
    
@@ -59,6 +59,16 @@ def get_dateString(day_delta=0, from_date=None):
     dt = datetime(year=dt.year, month=dt.month, day=dt.day)
     date_str = f"{dt.year}-{dt.month:02}-{dt.day:02}"
     return date_str
+
+def getDayCount(datestr):
+    date_fields = datestr.split('-')
+    year = int(date_fields[0])
+    month = int(date_fields[1])
+    day = int(date_fields[2])
+    dt = datetime(year=year, month=month, day=day)
+    count = int((dt.timestamp() - time.time()) // (24*60*60))
+    return count
+  
 
 """
 def check_delta_range(delta, option_type=None, c_delta=None):
@@ -242,18 +252,18 @@ class Candidate:
             self._props["bevenc"] = bevenc
             return
         elif ps and pb and not cs and not cb:
-            tpc = ps.price - pb.price
+            tcp = ps.price - pb.price
             width = ps.strike - pb.strike
             if width:
-                tpc_w = 100 * (tpc / width)
-                tpc_u = 100 * (tpc / underlying)
+                tcp_w = 100 * (tcp / width)
+                tcp_u = 100 * (tcp / underlying)
                 delta_pc = 1.0 + ps.delta   #+
-                delta_pch = tpc * (pb.delta - ps.delta) / width #+
+                delta_pch = tcp * (pb.delta - ps.delta) / width #+
                 delta_plh = pb.delta - ps.delta - delta_pch #+
                 bevenp = 100 * (delta_pc + delta_pch)
-                pl = width - tpc
-                epc = tpc * delta_pc
-                epch = 0.5 * tpc * delta_pch
+                pl = width - tcp
+                epc = tcp * delta_pc
+                epch = 0.5 * tcp * delta_pch
                 eplh = -0.5 * pl * delta_plh
                 epl = pl * pb.delta
                 etp = epc + epch + eplh + epl
@@ -265,20 +275,20 @@ class Candidate:
                 logging.info(f"price:  {ps.price:8.3f}  {pb.price:8.3f}" )
                 logging.info("******************")
 
-                logging.info(f"tpc: {tpc:.3f}")
+                logging.info(f"tcp: {tcp:.3f}")
                 logging.info(f"width: {width:.3f}")
                 logging.info(f"delta_pc: {delta_pc:.3f}  delta_pch: {delta_pch:.3f}  delta_plh: {delta_plh:.3f}")
                 logging.info(f"pl: {pl:.3f}")
                 logging.info(f"epc: {epc:.3f}  epch: {epch:.3f}  eplh: {eplh:.3f}  epl: {epl:.3f}") 
                 logging.info(f"etp: {etp:.3f}")
-                logging.info(f"tpc/w: {tpc_w:.3f}")
-                logging.info(f"tpc/u: {tpc_u:.3f}")
+                logging.info(f"tcp/w: {tcp_w:.3f}")
+                logging.info(f"tcp/u: {tcp_u:.3f}")
                 logging.info(f"bevenp: {bevenp:.2f}")
 
-                self._props["tpc"] = tpc
+                self._props["tcp"] = tcp
                 self._props["width"] = width
-                self._props["tpc_w"] = tpc_w
-                self._props["tpc_u"] = tpc_u
+                self._props["tcp_w"] = tcp_w
+                self._props["tcp_u"] = tcp_u
                 self._props["etp"] = etp
                 self._props["bevenp"] = bevenp
             return
@@ -414,6 +424,12 @@ class Candidate:
             proprank = self.get_rank(propname)
 
             s = f"{propname}: {propval:.3f}"
+            """
+            if propname == "tc_w" or propname == "tc_u"
+                or propname == "tcc_w" or propname == "tcc_u"
+                or propname == "tcp_w" or propname == "tcp_u":
+                s += "%"
+            """    
             if proprank:
                 s += f" rank: {proprank}"
             if total:
@@ -522,30 +538,99 @@ class Candidate:
     def meets_requirements(self):
         logging.info(f"requirements check")
 
-        for propname in ("tc_u", "et", "tc", "tc_w"):
-            if propname not in self._props:
-                logging.info(f"meet_requirements, {propname} not set")
+        if self._cs and self._cb and self._ps and self._pb:
+            # IC
+
+            for propname in ("et", "tc", "tc_w", "tc_u"):
+                if propname not in self._props:
+                    logging.info(f"meet_requirements, {propname} not set")
+                    return False
+
+            et = self._props["et"]
+            tc = self._props["tc"]
+            tc_w = self._props["tc_w"]
+            tc_u = self._props["tc_u"]
+
+            if et < MIN_ET:
+                logging.debug(f"BAD et: {et} < {MIN_ET}")
                 return False
 
-        tc_u = self._props["tc_u"]
-        tc_w = self._props["tc_w"]
-        
-        if tc_u <= MIN_TCU:
-            logging.info(f"BAD tcu: {tc_u} < {MIN_TCW}")
-            return False
-        """
-        if self._ps.strike - self._pb.strike <= tc:
-            logging.info(f"BAD tail: put < tc {tc}")
-            return False   
-        
-        if self._cb.strike - self._cs.strike <= tc:
-            logging.info(f"BAD tail: call < tc {tc}")
-            return False  
-        """
+            if tc < MIN_TC:
+                logging.debug(f"BAD tc: {tc} < {MIN_TC}")
+                return False
+                
+            if tc_w < MIN_TCW:
+                logging.info(f"BAD tcw check: {tc_w} < {MIN_TCW}")
+                return False
 
-        if tc_w < MIN_TCW:
-            logging.info(f"BAD tc/w check: {tc_w} < {MIN_TCW}")
-            return False
+            if tc_u < MIN_TCU:
+                logging.info(f"BAD tcu: {tc_u} < {MIN_TCW}")
+                return False
+
+            """
+            if self._ps.strike - self._pb.strike <= tc:
+                logging.info(f"BAD tail: put < tc {tc}")
+                return False   
+        
+            if self._cb.strike - self._cs.strike <= tc:
+                logging.info(f"BAD tail: call < tc {tc}")
+                return False  
+            """
+        elif self._cs and self._cb:
+            # call spread
+            for propname in ("etc", "tcc", "tcc_w", "tcc_u"):
+                if propname not in self._props:
+                    logging.info(f"meet_requirements, {propname} not set")
+                    return False
+
+            etc = self._props["etc"]
+            tcc = self._props["tcc"]
+            tcc_w = self._props["tcc_w"]
+            tcc_u = self._props["tcc_u"]
+
+            if etc < MIN_ET:
+                logging.info(f"BAD etc: {etc} < {MIN_ET}")
+                return False
+
+            if tcc < MIN_TC:
+                logging.info(f"BAD tcc: {tcc} < {MIN_TC}")
+                return False
+        
+            if tcc_u < MIN_TCU:
+                logging.info(f"BAD tcu: {tcc_u} < {MIN_TCW}")
+                return False
+
+            if tcc_w < MIN_TCW:
+                logging.info(f"BAD tcw check: {tcc_w} < {MIN_TCW}")
+                return False
+
+        elif self._ps and self._pb:
+            # put spread
+            for propname in ("etp", "tcp", "tcp_w", "tcp_u"):
+                if propname not in self._props:
+                    logging.info(f"meet_requirements, {propname} not set")
+                    return False
+
+            etp = self._props["etp"]
+            tcp = self._props["tcp"]
+            tcp_w = self._props["tcp_w"]
+            tcp_u = self._props["tcp_u"]
+                    
+            if etp < MIN_ET:
+                logging.info(f"BAD etp: {etp} < {MIN_ET}")
+                return False
+
+            if tcp < MIN_TC:
+                logging.info(f"BAD tcp: {tcp} < {MIN_TC}")
+                return False
+
+            if tcp_w < MIN_TCW:
+                logging.info(f"BAD tcpw check: {tcp_w} < {MIN_TCW}")
+                return False
+
+            if tcp_u < MIN_TCU:
+                logging.info(f"BAD tcpu: {tcp_u} < {MIN_TCW}")
+                return False
     
         return True
 
@@ -672,9 +757,13 @@ def get_contracts(symbol, chains):
         print(f"{symbol}, volatility: {volatility:12.3f}", file=f)
         print(f"{symbol}, interestRate: {interestRate:12.3f}", file=f)
         print(f"{symbol}, expireDate: {put_expire_date}", file=f)
+        daysToExpiration = getDayCount(put_expire_date)
+        print(f"{symbol}, daysToExpiration: {daysToExpiration}", file=f)
 
         header = "#           description,                 "
         for propname in OPTION_PROPS[1:]:
+            if propname == "daysToExpiration":
+                continue
             header += f"{propname:>12},"
 
         print(header, file=f)
@@ -688,6 +777,8 @@ def get_contracts(symbol, chains):
         for option in options:   
             textline = f"{option.desc:40},"
             for propname in OPTION_PROPS[1:]:
+                if propname == "daysToExpiration":
+                    continue
                 propval = option.getProp(propname)
                 print(f"got propname: {propname} propval: {propval}")
                 if isinstance(propval, float):
@@ -763,6 +854,10 @@ def load_from_file(symbol, dt_min=None, dt_max=None, useold=False):
         # next line should be expireDate
         n = line.find(":")
         expireDate = line[(n+1):].strip()
+        line = f.readline().strip()
+        n = line.find(":")
+        daysToExpiration = int(line[(n+1):])
+        logging.debug(f"got daysToExpiration: {daysToExpiration}")
         propnames = []
         # next line should be headers
         line = f.readline().strip()
@@ -891,30 +986,32 @@ def check_ic_symmetry(ic):
 
     return True      
 
-def check_ic_preq(candidate):
-    if candidate.has_prop("etc"):
+def check_preq(candidate):
+    if candidate.has_prop("et"):
+        et = candidate.get_prop("et")
+        tc = candidate.get_prop("tc")
+        logging.debug(f"check_preq, got et: {et}, tc: {tc}")
+    elif candidate.has_prop("etc"):
         et = candidate.get_prop("etc")
         tc = candidate.get_prop("tcc")
-        logging.debug(f"check_ic_preq, got etc: {et}, tcc: {tc}")
-
-        
+        logging.debug(f"check_preq, got etc: {et}, tcc: {tc}")      
     elif candidate.has_prop("etp"):
         et = candidate.get_prop("etp")
         #logging.debug(f"propnames: {candidate.get_props()}")
-        tc = candidate.get_prop("tpc")
-        logging.debug(f"check_ic_preq, got etp: {et}, tcp: {tc}")
+        tc = candidate.get_prop("tcp")
+        logging.debug(f"check_preq, got etp: {et}, tcp: {tc}")
     else:
         logging.warning("expected to find either etc or etp property")
         return False
         
-    if tc <= MIN_TC:
-        logging.debug("check_ic_preq False -> tc <= MIN_TC")
+    if tc < MIN_TC:
+        logging.debug("check_preq False -> tc < MIN_TC")
         return False
-    if et <= MIN_ET:
-        logging.debug("check_ic_preq False -> et <= MIN_ET")
+    if et < MIN_ET:
+        logging.debug("check_preq False -> et < MIN_ET")
         return False
 
-    logging.debug("check_ic_preq True")
+    logging.debug("check_preq True")
     return True
 
 
@@ -930,8 +1027,7 @@ def get_candidates_put(contracts, ps_range=None, pb_range=None):
         pb_range = PSR_PB_DELTA_RANGE
 
     pb_list = []
-    for i in range(len(put_list)-1):
-        pb = put_list[i]
+    for pb in put_list:
         logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
        
         if pb.delta < pb_range[0] or pb.delta > pb_range[1]:
@@ -939,18 +1035,17 @@ def get_candidates_put(contracts, ps_range=None, pb_range=None):
         else:
             pb_list.append(pb)
 
+    logging.info(f"pb_list count: {len(pb_list)}")
     ps_list = []
-    for i in range(len(put_list)):
-        ps = put_list[i]
+    for ps in put_list:
         logging.info(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
             
         if ps.delta < ps_range[0] or ps.delta > ps_range[1]:
             logging.info(f"BAD delta range: put sell delta: {ps.delta}")
         else:
             ps_list.append(ps)
+    logging.info(f"ps_list count: {len(ps_list)}")
 
-    
-           
     #for option in put_list:
         #print(f"put_list.strike: {option.strike:.3f}")
      
@@ -961,22 +1056,14 @@ def get_candidates_put(contracts, ps_range=None, pb_range=None):
     total_count = 0
     meet_requirements_count = 0
     
-    for i in range(len(pb_list)):
-        pb = pb_list[i]
+    for pb in pb_list:
         logging.info(f"--------pb: strike:{pb.strike}, delta:{pb.delta}, price:{pb.price}")
-        last_strike = pb.strike
-        for j in range(len(put_list)):
-            ps = put_list[j]
+        for ps in ps_list:
             if pb.strike >= ps.strike:
                 logging.debug(f"skip pb.strike > ps.strike  {pb.strike}>{ps.strike}")
                 continue
-            logging.debug(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")
-            this_strike = ps.strike
+            logging.debug(f"------ps: strike:{ps.strike}, delta:{ps.delta}, price:{ps.price}")            
             
-            if this_strike <= last_strike:
-                logging.DEBUG(f"unexpected put last_strike: {last_strike} this_strike: {this_strike}")
-                sys.exit(1)
-
             if prelimination(ps=ps, pb=pb):
                 total_count += 1
                 candidate = Candidate(ps=ps, pb=pb, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
@@ -1003,24 +1090,25 @@ def get_candidates_call(contracts, cs_range=None, cb_range=None):
         cb_range = CSR_CB_DELTA_RANGE
 
     cs_list = []
-    for i in range(len(call_list)-1):
-        cs = call_list[i]
+    for cs in call_list:
         logging.info(f"check--------cs: strike:{cs.strike}, delta:{cs.delta}, price:{cs.price}")
        
         if  cs.delta < cs_range[0] or cs.delta > cs_range[1]:
             logging.info(f"BAD delta range: call sell delta: {cs.delta}")
         else:
             cs_list.append(cs)
+    logging.info(f"cs_list count: {len(cs_list)}")
 
     cb_list = []
-    for i in range(len(call_list)):
-        cb = call_list[i]
+    for cb in call_list:
         logging.info(f"check------cb: strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
             
         if cb.delta < cb_range[0] or cb.delta > cb_range[1]:
             logging.info(f"BAD delta range: call but delta: {cb.delta}")
         else:
             cb_list.append(cb)
+    logging.info(f"cb_list count: {len(cb_list)}")
+
      
     underlying = contracts["underlying"]
     volatility = contracts["volatility"]
@@ -1029,23 +1117,15 @@ def get_candidates_call(contracts, cs_range=None, cb_range=None):
     total_count = 0
     meet_requirements_count = 0
     
-    for i in range(len(cs_list) - 1):
-        cs = cs_list[i]
+    for cs in cs_list:
         logging.info(f"--------cs: strike:{cs.strike}, delta:{cs.delta}, price:{cs.price}")
     
-        last_strike = cs.strike
-        for j in range(len(cb_list)):
-            cb = cb_list[j]
+        for cb in cb_list:
             if cb.strike <= cs.strike:
+                logging.info(f"skip cb.strike <= cs.strike: {cb.strike} <= {cs.strike}")
                 continue
             logging.info(f"------cb: {cb.desc} strike:{cb.strike}, delta:{cb.delta}, price:{cb.price}")
-            
-            this_strike = cb.strike
-            
-            if this_strike <= last_strike:
-                logging.DEBUG(f"unexpected call last_strike: {last_strike} this_strike: {this_strike}")
-                sys.exit(1)
-
+               
             if prelimination(cs=cs, cb=cb):
                 total_count += 1
                 candidate = Candidate(cs=cs, cb=cb, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
@@ -1056,7 +1136,8 @@ def get_candidates_call(contracts, cs_range=None, cb_range=None):
 
     print ("----------------------")
     print("total call candidates:", total_count)
-    print("meet req candidates:", meet_requirements_count)                    
+    print("meet req candidates:", meet_requirements_count)    
+
     return candidates
 
 def get_ic_candidates(contracts):
@@ -1068,40 +1149,37 @@ def get_ic_candidates(contracts):
     volatility = contracts["volatility"]
     interestRate = contracts["interestRate"]
     expireDate = contracts["expireDate"]
-    
-    call_candidates = get_candidates_call(contracts, cs_range=IC_CS_DELTA_RANGE, cb_range=IC_CB_DELTA_RANGE)
 
-    call_ic_candidates = []
-    for candidate in call_candidates:
-        if check_ic_preq(candidate):
-            call_ic_candidates.append(candidate)
-
-    put_candidates = get_candidates_put(contracts, ps_range=IC_PS_DELTA_RANGE, pb_range=IC_PB_DELTA_RANGE)
-    put_ic_candidates = []
-    for candidate in put_candidates:
-        if check_ic_preq(candidate):
-            put_ic_candidates.append(candidate)
-
-    logging.info("***************CCCC**************") 
-    logging.info("call_ic_candidates:") 
-    for cand in call_ic_candidates:
-        logging.info(f"call spread: {cand.cs.strike}/{cand.cb.strike}") 
-    logging.info("***************PPPP***************")         
-    logging.info("put_ic_candidates:") 
-    for cand in put_ic_candidates:
-        logging.info(f"put spread: {cand.ps.strike}/{cand.pb.strike}") 
-
+    put_list = get_candidates_put(contracts, ps_range=IC_PS_DELTA_RANGE, pb_range=IC_PB_DELTA_RANGE)
+    call_list = get_candidates_call(contracts, cs_range=IC_CS_DELTA_RANGE, cb_range=IC_CB_DELTA_RANGE)
  
-    for call_candidate in call_ic_candidates:  
-       cs = call_candidate.cs
-       cb = call_candidate.cb
-       for put_candidate in put_ic_candidates:
-           ps = put_candidate.ps
-           pb = put_candidate.pb
-           candidate = Candidate(cs=cs, cb=cb, pb=pb, ps=ps, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
-           if check_ic_requirements(candidate):
-               ic_candidates.append(candidate)
-               logging.info(f"ic_candidate: {cs.strike}/{cb.strike}/{ps.strike}/{pb.strike}")
+       
+    logging.info(f"get_ic_candidates put_list (count: {len(put_list)}):")
+    for put in put_list:
+        logging.info(put)
+    logging.info(f"get_ic_candidates call_list (count: {len(call_list)}):")
+    for call in call_list:
+        logging.info(call)
+
+    total_count = 0
+    meet_requirements_count = 0
+    
+    for call in call_list:
+        logging.info(f"--------ic calls: {call}")
+    
+        for put in put_list:
+            logging.info(f"----------ic puts {put}")
+            total_count += 1
+            candidate = Candidate(cs=call.cs, cb=call.cb, ps=put.ps, pb=put.pb, underlying=underlying, volatility=volatility, interestRate=interestRate, expireDate=expireDate)
+                       
+            if candidate.meets_requirements(): # and check_preq(candidate):
+                ic_candidates.append(candidate)
+                meet_requirements_count += 1   
+
+            
+    print ("----------------------")
+    print("total ic candidates:", total_count)
+    print("meet req ic candidates:", meet_requirements_count)                    
 
     return ic_candidates
 
@@ -1133,6 +1211,9 @@ formatter = logging.Formatter('%(levelname)s: %(message)s')
 handler.setFormatter(formatter)
 #logging.basicConfig(format='LOG %(message)s', level=loglevel)
 root.addHandler(handler)
+
+dt_now = datetime.fromtimestamp(time.time())
+print(f"run date: {dt_now.year}-{dt_now.month:02}-{dt_now.day:02}")
 
 sort_key_arg = False
 for argn in range(1, len(sys.argv)):
@@ -1279,10 +1360,13 @@ else:
     volatility = first_candidate.volatility
     interestRate = first_candidate.interestRate
     expireDate = first_candidate.expireDate
+  
+    daysToExpiration = getDayCount(expireDate) 
     print(f"{symbol}: underlying: {underlying} sorting by: [{sort_key}]")
-    print(f"{symbol}: volatility: {volatility}")
-    print(f"{symbol}: interestRate: {interestRate}")
-    print(f"{symbol}: expireDate: {expireDate}")
+    #print(f"{symbol}: volatility: {volatility}")
+    #print(f"{symbol}: interestRate: {interestRate}")
+    #print(f"{symbol}: expireDate: {expireDate}")
+    print(f"{symbol}: daysToExpiration: {daysToExpiration}")
 candidates.sort(key = lambda candidate: candidate.get_order(sort_key))
 
 printCandidates(candidates)
