@@ -34,7 +34,7 @@ OPTION_PROPS = ["description", "symbol", "putCall", "strikePrice", "bid", "ask",
     "highPrice", "lowPrice", "openPrice", "closePrice", "totalVolume", 
     "netChange", "volatility", "delta", "gamma", "theta", "vega", "openInterest", "timeValue",
     "theoreticalOptionValue", "daysToExpiration"]
-loglevel = logging.INFO # DEBUG or INFO or ERROR
+loglevel = logging.ERROR # DEBUG or INFO or ERROR
 
 def get_dateString(day_delta=0, from_date=None):
    
@@ -70,51 +70,6 @@ def getDayCount(datestr):
     return count
   
 
-"""
-def check_delta_range(delta, option_type=None, c_delta=None):
-    if ARGS["skip_delta"]:
-        return True
-    if option_type == "cs":
-        lbnd = CS_DELTA_RANGE[0]
-        ubnd = CS_DELTA_RANGE[1]
-    elif option_type == "cb":
-        lbnd = CB_DELTA_RANGE[0]
-        ubnd = CB_DELTA_RANGE[1]
-        if c_delta:
-            if c_delta > ubnd:
-                ubnd = c_delta 
-    elif option_type == "ps":
-        lbnd = PS_DELTA_RANGE[0]
-        ubnd = PS_DELTA_RANGE[1]
-        if c_delta:
-            if ubnd < -c_delta: 
-                ubnd = -c_delta
-            logging.debug(f"ps: c_delta= {c_delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
-        else:
-            logging.debug(f"ps: c_delta=None lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
-
-    
-    elif option_type == "pb":
-        lbnd = PB_DELTA_RANGE[0]
-        ubnd = PB_DELTA_RANGE[1]
-        if c_delta:
-            if c_delta > lbnd:
-                lbnd = c_delta
-    else:
-        logging.error("invalid call type")
-        sys.exit(1)
-    
-    logging.debug(f"check_delta_range: delta= {delta:.3f} lbnd= {lbnd:.3f} ubnd= {ubnd:.3f}")
-    
-    #if ubnd < lbnd:
-    #    logging.warning("expected delta check upper bound to be greater than lower bound")
-    #    return False
-    
-    if lbnd <= delta and delta <= ubnd:
-        return True
-
-    return False
-"""
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -139,6 +94,12 @@ def descIsCall(desc):
 
 def descIsPut(desc):
     if desc.find("Put") > 0:
+        return True
+    else:
+        return False
+
+def descIsPM(desc):
+    if desc.find("(PM)") > 0:
         return True
     else:
         return False
@@ -692,6 +653,7 @@ def get_chains(symbol, dt_min, dt_max):
 def get_options(option_map, underlying):
     results = []
     expire_date = None
+    option_symbol = None
     for expDate in option_map:
         if expire_date:
             if expDate != expire_date:
@@ -703,9 +665,18 @@ def get_options(option_map, underlying):
             options = bundle[strikePrice]
             for option in options:
                 description = option["description"]
-                print("description:", description)
+                #if option_symbol and option["symbol"] != option_symbol:
+                #    continue
+                #if not option_symbol:
+                #    option_symbol = option["symbol"]
+                option_symbol = option["symbol"]
+                print("description:", description, "option_symbol:", option_symbol)
+        
                 strike = float(strikePrice)
-                if descIsPut(description):
+                if descIsPM(description):
+                    logging.info(f"skip PM option: {description}")
+                    continue
+                elif descIsPut(description):
                     if underlying <= strike:
                         logging.info(f"skip put, underlying: {underlying} strike: {strike}")
                         continue
@@ -780,7 +751,7 @@ def get_contracts(symbol, chains):
                 if propname == "daysToExpiration":
                     continue
                 propval = option.getProp(propname)
-                print(f"got propname: {propname} propval: {propval}")
+                #print(f"got propname: {propname} propval: {propval}")
                 if isinstance(propval, float):
                     textline += f"{propval:12.3f},"
                 elif isinstance(propval, str):
@@ -799,7 +770,8 @@ def get_contracts(symbol, chains):
     retval["put"] = put_options
     return retval   
 
-def load_from_file(symbol, dt_min=None, dt_max=None, useold=False):
+def get_data_filename(symbol,dt_min=None, dt_max=None, useold=False):
+
     # search data files for valid file to load
     logging.info(f"load_file_file({symbol}, {dt_min}, {dt_max})")
     stock_dir = f"data/{symbol}"
@@ -832,11 +804,15 @@ def load_from_file(symbol, dt_min=None, dt_max=None, useold=False):
             datafile = filenames[-1]
         else:
             logging.info("no datafile found")
-            return None
+    return datafile
+
+def load_from_file(datafile):
 
     underlying = None
     calls = []
     puts = []
+    stock_dir = f"data/{symbol}"
+
     with open(stock_dir+"/"+datafile+".txt") as f:
         line = f.readline().strip()
         # first line should be like: MMM, underlying:      158.630
@@ -1212,9 +1188,6 @@ handler.setFormatter(formatter)
 #logging.basicConfig(format='LOG %(message)s', level=loglevel)
 root.addHandler(handler)
 
-dt_now = datetime.fromtimestamp(time.time())
-print(f"run date: {dt_now.year}-{dt_now.month:02}-{dt_now.day:02}")
-
 sort_key_arg = False
 for argn in range(1, len(sys.argv)):
     argval = sys.argv[argn]
@@ -1256,6 +1229,13 @@ seconds_in_day = 24.0 * 60.0 * 60.0
 exp_target_min = time.time() + 41.0 * seconds_in_day
 exp_target_max = time.time() + 60.0 * seconds_in_day
 
+data_filename = ""
+if not reload:
+    data_filename = get_data_filename(symbol)
+
+
+dt_now = datetime.fromtimestamp(time.time())
+print(f"run date: {dt_now.year}-{dt_now.month:02}-{dt_now.day:02}  datafile: {data_filename}")
 dt = datetime.fromtimestamp(exp_target_min)
 # get time as of midnight
 dt_min = datetime(year=dt.year, month=dt.month, day=dt.day)
@@ -1263,9 +1243,9 @@ dt = datetime.fromtimestamp(exp_target_max)
 dt_max = datetime(year=dt.year, month=dt.month, day=dt.day)
     
 contracts = None
-if not reload:
+if not reload and data_filename:
     # see if we can load from previous file
-    contracts = load_from_file(symbol)
+    contracts = load_from_file(data_filename)
 
 if not contracts:
     chains = get_chains(symbol, dt_min, dt_max)
